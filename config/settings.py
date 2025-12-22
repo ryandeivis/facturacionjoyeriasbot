@@ -34,7 +34,8 @@ class Settings(BaseSettings):
     DATABASE_ECHO: bool = False
 
     # n8n Integration
-    N8N_WEBHOOK_URL: str = ""
+    N8N_WEBHOOK_URL: str = ""  # Webhook para extracción de datos (texto/voz/foto)
+    N8N_PDF_WEBHOOK_URL: str = ""  # Webhook para generación de PDF
     N8N_TIMEOUT_SECONDS: int = 60
 
     # Seguridad
@@ -53,6 +54,7 @@ class Settings(BaseSettings):
 
     # Formato de factura
     INVOICE_PREFIX: str = "JOY"
+    TAX_RATE: float = 0.19  # Tasa de IVA (19% Colombia por defecto)
 
     # Feature Flags
     FEATURE_VOICE_INPUT: bool = True

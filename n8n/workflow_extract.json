@@ -1,0 +1,418 @@
+{
+  "name": "Jewelry Bot - Extract Items",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jewelry-extract",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "id": "webhook-extract",
+      "name": "Webhook Extract",
+      "webhookId": "jewelry-extract-001"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "check-voice",
+              "leftValue": "={{ $json.body.type }}",
+              "rightValue": "voice",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [220, 0],
+      "id": "is-voice",
+      "name": "Es Audio?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "check-photo",
+              "leftValue": "={{ $json.body.type }}",
+              "rightValue": "photo",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [440, 120],
+      "id": "is-photo",
+      "name": "Es Foto?"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "options": {
+          "language": "es"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [440, -120],
+      "id": "transcribe-audio",
+      "name": "Transcribir Audio",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "text": "Extrae TODO el texto visible de esta imagen de productos de joyeria. Si hay datos estructurados como nombres de productos, cantidades y precios, organizalos claramente. Responde en español.",
+        "inputType": "base64",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [660, 0],
+      "id": "analyze-image",
+      "name": "Analizar Imagen",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-text-audio",
+              "name": "input_text",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "set-type-audio",
+              "name": "input_type",
+              "value": "audio",
+              "type": "string"
+            },
+            {
+              "id": "set-transcripcion",
+              "name": "transcripcion",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [660, -120],
+      "id": "prepare-audio",
+      "name": "Preparar Audio"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-text-photo",
+              "name": "input_text",
+              "value": "={{ $json.content }}",
+              "type": "string"
+            },
+            {
+              "id": "set-type-photo",
+              "name": "input_type",
+              "value": "foto",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, 0],
+      "id": "prepare-photo",
+      "name": "Preparar Foto"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-text-direct",
+              "name": "input_text",
+              "value": "={{ $('Webhook Extract').item.json.body.content }}",
+              "type": "string"
+            },
+            {
+              "id": "set-type-text",
+              "name": "input_type",
+              "value": "texto",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [660, 200],
+      "id": "prepare-text",
+      "name": "Preparar Texto"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [1100, 0],
+      "id": "merge-inputs",
+      "name": "Unir Inputs"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=Eres un asistente de facturacion de joyeria. Extrae la informacion del siguiente texto y responde SOLO con JSON valido.\n\nFormato de respuesta:\n{\n  \"items\": [\n    {\n      \"nombre\": \"nombre del producto\",\n      \"descripcion\": \"descripcion breve\",\n      \"cantidad\": 1,\n      \"precio\": 0\n    }\n  ],\n  \"cliente\": {\n    \"nombre\": null,\n    \"direccion\": null,\n    \"ciudad\": null,\n    \"email\": null,\n    \"telefono\": null\n  },\n  \"descuento\": 0,\n  \"notas\": null\n}\n\nReglas:\n- Los precios son en pesos colombianos (COP)\n- Si no se menciona cantidad, asume 1\n- Extrae datos del cliente si se mencionan\n- Maximo 6 items\n- Si el precio tiene puntos como separador de miles (ej: 2.500.000), interpretalo correctamente\n- Responde UNICAMENTE con el JSON, sin texto adicional\n\nTexto a procesar:\n{{ $json.input_text }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [1320, 0],
+      "id": "extract-items",
+      "name": "Extraer Items con IA",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Obtener respuesta de la IA\nconst aiResponse = $input.first().json.message?.content || $input.first().json.content;\nconst inputType = $('Unir Inputs').first().json.input_type;\nconst transcripcion = $('Unir Inputs').first().json.transcripcion || null;\n\nlet data;\ntry {\n  // Limpiar y parsear JSON\n  let clean = aiResponse.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(clean);\n} catch (e) {\n  return {\n    success: false,\n    error: \"No pude procesar la informacion. Intenta de nuevo con mas detalle.\",\n    items: [],\n    input_type: inputType\n  };\n}\n\n// Procesar items (maximo 6)\nconst items = [];\nlet subtotal = 0;\n\nif (data.items && data.items.length > 0) {\n  data.items.slice(0, 6).forEach((item, index) => {\n    const cantidad = parseInt(item.cantidad) || 1;\n    const precio = parseFloat(item.precio) || 0;\n    const total = cantidad * precio;\n    subtotal += total;\n    \n    items.push({\n      numero: index + 1,\n      nombre: item.nombre || \"Producto\",\n      descripcion: item.descripcion || \"\",\n      cantidad: cantidad,\n      precio: precio,\n      total: total\n    });\n  });\n}\n\n// Calcular totales (19% IVA Colombia)\nconst descuento = parseFloat(data.descuento) || 0;\nconst baseGravable = subtotal - descuento;\nconst impuesto = Math.round(baseGravable * 0.19);\nconst total = baseGravable + impuesto;\n\nreturn {\n  success: items.length > 0,\n  items: items,\n  cliente: {\n    nombre: data.cliente?.nombre || null,\n    direccion: data.cliente?.direccion || null,\n    ciudad: data.cliente?.ciudad || null,\n    email: data.cliente?.email || null,\n    telefono: data.cliente?.telefono || null\n  },\n  totales: {\n    subtotal: subtotal,\n    descuento: descuento,\n    impuesto: impuesto,\n    total: total\n  },\n  input_type: inputType,\n  transcripcion: transcripcion,\n  notas: data.notas || null,\n  confianza: items.length > 0 ? 0.85 : 0\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 0],
+      "id": "process-response",
+      "name": "Procesar Respuesta"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1760, 0],
+      "id": "respond-webhook",
+      "name": "Responder al Bot"
+    }
+  ],
+  "connections": {
+    "Webhook Extract": {
+      "main": [
+        [
+          {
+            "node": "Es Audio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es Audio?": {
+      "main": [
+        [
+          {
+            "node": "Transcribir Audio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Es Foto?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es Foto?": {
+      "main": [
+        [
+          {
+            "node": "Analizar Imagen",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Preparar Texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribir Audio": {
+      "main": [
+        [
+          {
+            "node": "Preparar Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analizar Imagen": {
+      "main": [
+        [
+          {
+            "node": "Preparar Foto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Audio": {
+      "main": [
+        [
+          {
+            "node": "Unir Inputs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Foto": {
+      "main": [
+        [
+          {
+            "node": "Unir Inputs",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Preparar Texto": {
+      "main": [
+        [
+          {
+            "node": "Unir Inputs",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Unir Inputs": {
+      "main": [
+        [
+          {
+            "node": "Extraer Items con IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer Items con IA": {
+      "main": [
+        [
+          {
+            "node": "Procesar Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Respuesta": {
+      "main": [
+        [
+          {
+            "node": "Responder al Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.0.0",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "jewelry-invoice-bot"
+  },
+  "id": "jewelry-extract-workflow",
+  "tags": ["jewelry", "invoice", "extraction"]
+}

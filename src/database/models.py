@@ -165,6 +165,9 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
 
     # Datos del cliente
     cliente_nombre = Column(String(200), nullable=False)
+    cliente_direccion = Column(String(300), nullable=True)
+    cliente_ciudad = Column(String(100), nullable=True)
+    cliente_email = Column(String(255), nullable=True)
     cliente_telefono = Column(String(20), nullable=True)
     cliente_cedula = Column(String(15), nullable=True)
 

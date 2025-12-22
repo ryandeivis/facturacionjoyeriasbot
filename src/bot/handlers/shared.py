@@ -31,6 +31,10 @@ class InvoiceStates:
     CLIENTE_TELEFONO = 105
     CLIENTE_CEDULA = 106
     GENERAR_FACTURA = 107
+    # Nuevos estados para datos completos del cliente
+    CLIENTE_DIRECCION = 108
+    CLIENTE_CIUDAD = 109
+    CLIENTE_EMAIL = 110
 
 
 # ============================================================================
@@ -126,6 +130,7 @@ def limpiar_datos_factura(context) -> None:
     """
     keys_to_remove = [
         'items', 'cliente_nombre', 'cliente_telefono', 'cliente_cedula',
+        'cliente_direccion', 'cliente_ciudad', 'cliente_email',
         'subtotal', 'total', 'input_type', 'input_raw', 'transcripcion',
         'manual_mode'
     ]
@@ -249,3 +254,94 @@ MENSAJES = {
         "Intenta nuevamente con /start"
     )
 }
+
+
+# ============================================================================
+# MENSAJES DE GUÍA PARA FACTURACIÓN
+# ============================================================================
+
+GUIA_INPUT_BASE = """
+INFORMACION REQUERIDA
+=====================
+
+Para generar tu factura necesito:
+
+PRODUCTOS (obligatorio):
+  - Nombre del producto
+  - Descripcion breve
+  - Cantidad
+  - Precio unitario
+
+CLIENTE (se pedira despues):
+  - Nombre completo
+  - Direccion
+  - Ciudad
+  - Email
+
+Puedes incluir hasta 6 productos.
+"""
+
+GUIA_TEXTO = """
+INGRESO POR TEXTO
+=================
+
+Escribe los productos a facturar.
+
+EJEMPLO:
+1. Anillo de compromiso oro 18k
+   Anillo solitario con diamante 0.5ct
+   Cantidad: 1 - Precio: $2.500.000
+
+2. Cadena plata 925
+   Cadena eslabones 50cm
+   Cantidad: 1 - Precio: $180.000
+
+3. Aretes perlas
+   Aretes gota con perlas cultivadas
+   Cantidad: 2 - Precio: $95.000
+
+TIP: Incluye nombre, descripcion, cantidad y precio de cada item.
+"""
+
+GUIA_VOZ = """
+INGRESO POR VOZ
+===============
+
+Envia un mensaje de voz dictando los productos.
+
+EJEMPLO DE LO QUE DEBES DECIR:
+
+"Primer producto: anillo de compromiso en oro 18 kilates,
+es un solitario con diamante de medio quilate,
+cantidad uno, precio dos millones quinientos mil pesos.
+
+Segundo producto: cadena de plata 925,
+eslabones de 50 centimetros,
+cantidad uno, precio ciento ochenta mil pesos.
+
+Tercer producto: aretes de perlas cultivadas,
+tipo gota, cantidad dos,
+precio noventa y cinco mil pesos cada uno."
+
+TIP: Habla claro y menciona cantidad y precio de cada item.
+"""
+
+GUIA_FOTO = """
+INGRESO POR FOTO
+================
+
+Envia una foto clara de:
+- Lista de productos escrita
+- Ticket o recibo
+- Cotizacion previa
+- Nota de pedido
+
+ASEGURATE QUE LA IMAGEN TENGA:
+- Buena iluminacion
+- Texto legible
+- Nombres de productos
+- Cantidades
+- Precios
+
+TIP: Evita sombras y reflejos. Texto horizontal.
+"""

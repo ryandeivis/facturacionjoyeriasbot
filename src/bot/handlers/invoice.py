@@ -2,8 +2,19 @@
 Handlers de Facturación
 
 Maneja el flujo de creación de facturas con input de texto, voz o foto.
+Integra con n8n para extracción de datos con IA y generación de PDF.
+
+Flujo:
+1. Usuario selecciona tipo de input (texto/voz/foto)
+2. Bot envía input a n8n para extracción con IA
+3. n8n retorna items extraídos
+4. Usuario confirma/edita items
+5. Usuario ingresa datos del cliente
+6. Bot envía datos a n8n para generar PDF
+7. n8n retorna PDF y bot lo envía al usuario
 """
 
+import base64
 from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     MessageHandler,
@@ -12,6 +23,7 @@ from telegram.ext import (
     filters
 )
 from pathlib import Path
+from datetime import datetime, timedelta
 
 from src.utils.logger import get_logger
 from src.database.connection import get_db
@@ -27,7 +39,11 @@ from src.bot.handlers.shared import (
     limpiar_datos_factura,
     is_authenticated,
     format_currency,
-    MENSAJES
+    MENSAJES,
+    GUIA_INPUT_BASE,
+    GUIA_TEXTO,
+    GUIA_VOZ,
+    GUIA_FOTO
 )
 from config.constants import InvoiceStatus, InputType
 from config.settings import settings
@@ -43,6 +59,10 @@ DATOS_CLIENTE = InvoiceStates.DATOS_CLIENTE
 CLIENTE_TELEFONO = InvoiceStates.CLIENTE_TELEFONO
 CLIENTE_CEDULA = InvoiceStates.CLIENTE_CEDULA
 GENERAR_FACTURA = InvoiceStates.GENERAR_FACTURA
+# Nuevos estados
+CLIENTE_DIRECCION = InvoiceStates.CLIENTE_DIRECCION
+CLIENTE_CIUDAD = InvoiceStates.CLIENTE_CIUDAD
+CLIENTE_EMAIL = InvoiceStates.CLIENTE_EMAIL
 
 
 async def iniciar_nueva_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -79,42 +99,32 @@ async def seleccionar_tipo_input(update: Update, context: ContextTypes.DEFAULT_T
 
     if 'texto' in opcion:
         context.user_data['input_type'] = InputType.TEXTO.value
+        # Enviar guía completa antes de solicitar input
         await update.message.reply_text(
-            "INGRESO POR TEXTO\n"
-            "=" * 25 + "\n\n"
-            "Escribe los productos a facturar.\n\n"
-            "Ejemplo:\n"
-            "- Anillo oro 18k, 5g - $500.000\n"
-            "- Cadena plata 925, 20g - $150.000\n"
-            "- Aretes diamante - $1.200.000",
+            GUIA_INPUT_BASE,
             reply_markup=ReplyKeyboardRemove()
         )
+        await update.message.reply_text(GUIA_TEXTO)
         return RECIBIR_INPUT
 
     elif 'voz' in opcion:
         context.user_data['input_type'] = InputType.VOZ.value
+        # Enviar guía completa antes de solicitar input
         await update.message.reply_text(
-            "INGRESO POR VOZ\n"
-            "=" * 25 + "\n\n"
-            "Envía un mensaje de voz dictando los productos.\n\n"
-            "Ejemplo:\n"
-            "'Un anillo de oro 18 kilates de 5 gramos a 500 mil pesos,\n"
-            "una cadena de plata 925 de 20 gramos a 150 mil...'",
+            GUIA_INPUT_BASE,
             reply_markup=ReplyKeyboardRemove()
         )
+        await update.message.reply_text(GUIA_VOZ)
         return RECIBIR_INPUT
 
     elif 'foto' in opcion:
         context.user_data['input_type'] = InputType.FOTO.value
+        # Enviar guía completa antes de solicitar input
         await update.message.reply_text(
-            "INGRESO POR FOTO\n"
-            "=" * 25 + "\n\n"
-            "Envía una foto de:\n"
-            "- Lista de productos escrita\n"
-            "- Ticket o recibo\n"
-            "- Cotización previa",
+            GUIA_INPUT_BASE,
             reply_markup=ReplyKeyboardRemove()
         )
+        await update.message.reply_text(GUIA_FOTO)
         return RECIBIR_INPUT
 
     # Opción no reconocida
@@ -398,53 +408,84 @@ async def datos_cliente(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     await update.message.reply_text(
         f"Cliente: {nombre}\n\n"
-        "Teléfono del cliente:\n"
+        "Direccion del cliente (calle y numero):\n"
         "(Escribe 'omitir' si no tienes)"
     )
-    return CLIENTE_TELEFONO
+    return CLIENTE_DIRECCION
 
 
-async def cliente_telefono(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recibe el teléfono del cliente"""
-    telefono = update.message.text.strip()
+async def cliente_direccion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe la dirección del cliente"""
+    direccion = update.message.text.strip()
 
-    if telefono.lower() != 'omitir':
-        context.user_data['cliente_telefono'] = telefono
+    if direccion.lower() != 'omitir':
+        context.user_data['cliente_direccion'] = direccion
 
     await update.message.reply_text(
-        "Cédula del cliente:\n"
+        "Ciudad del cliente:\n"
         "(Escribe 'omitir' si no tienes)"
     )
-    return CLIENTE_CEDULA
+    return CLIENTE_CIUDAD
 
 
-async def cliente_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recibe la cédula del cliente y muestra resumen"""
-    cedula_cliente = update.message.text.strip()
+async def cliente_ciudad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe la ciudad del cliente"""
+    ciudad = update.message.text.strip()
 
-    if cedula_cliente.lower() != 'omitir':
-        context.user_data['cliente_cedula'] = cedula_cliente
+    if ciudad.lower() != 'omitir':
+        context.user_data['cliente_ciudad'] = ciudad
 
-    # Mostrar resumen
+    await update.message.reply_text(
+        "Email del cliente:\n"
+        "(Escribe 'omitir' si no tienes)"
+    )
+    return CLIENTE_EMAIL
+
+
+async def cliente_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe el email del cliente y muestra resumen"""
+    email = update.message.text.strip()
+
+    if email.lower() != 'omitir':
+        context.user_data['cliente_email'] = email
+
+    # Mostrar resumen con todos los datos
+    await _mostrar_resumen_factura(update, context)
+    return GENERAR_FACTURA
+
+
+async def _mostrar_resumen_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Muestra el resumen de la factura antes de confirmar"""
     items = context.user_data.get('items', [])
     subtotal = context.user_data.get('subtotal', 0)
     total = context.user_data.get('total', 0)
 
+    # Formatear items
     items_text = ""
-    for item in items:
+    for i, item in enumerate(items, 1):
+        nombre = item.get('nombre', item.get('descripcion', 'Producto'))
+        descripcion = item.get('descripcion', '')
+        cantidad = item.get('cantidad', 1)
         precio = item.get('precio', 0)
-        items_text += f"  - {item.get('descripcion')}: {format_currency(precio)}\n"
+        item_total = cantidad * precio
+
+        items_text += f"{i}. {nombre}\n"
+        if descripcion and descripcion != nombre:
+            items_text += f"   {descripcion}\n"
+        items_text += f"   {cantidad} x {format_currency(precio)} = {format_currency(item_total)}\n\n"
 
     mensaje = (
         "RESUMEN DE FACTURA\n"
         "=" * 30 + "\n\n"
-        f"Cliente: {context.user_data.get('cliente_nombre')}\n"
-        f"Teléfono: {context.user_data.get('cliente_telefono', 'N/A')}\n"
-        f"Cédula: {context.user_data.get('cliente_cedula', 'N/A')}\n\n"
-        f"Items:\n{items_text}\n"
+        "CLIENTE:\n"
+        f"  Nombre: {context.user_data.get('cliente_nombre', 'N/A')}\n"
+        f"  Direccion: {context.user_data.get('cliente_direccion', 'N/A')}\n"
+        f"  Ciudad: {context.user_data.get('cliente_ciudad', 'N/A')}\n"
+        f"  Email: {context.user_data.get('cliente_email', 'N/A')}\n\n"
+        f"ITEMS:\n{items_text}"
         f"SUBTOTAL: {format_currency(subtotal)}\n"
         f"TOTAL: {format_currency(total)}\n\n"
-        "¿Confirmar y generar factura?"
+        "Confirmar y generar factura?"
     )
 
     await update.message.reply_text(
@@ -452,11 +493,15 @@ async def cliente_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         reply_markup=get_generate_keyboard()
     )
 
-    return GENERAR_FACTURA
-
 
 async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Genera la factura final"""
+    """
+    Genera la factura final.
+
+    1. Guarda factura en BD
+    2. Solicita PDF a n8n
+    3. Envía PDF al usuario
+    """
     opcion = update.message.text.lower()
 
     if 'cancelar' in opcion:
@@ -469,19 +514,33 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return AuthStates.MENU_PRINCIPAL
 
     if 'confirmar' in opcion or 'generar' in opcion:
+        # Mostrar mensaje de procesando
+        processing_msg = await update.message.reply_text(
+            "Generando factura... Por favor espera."
+        )
+
         try:
             db = next(get_db())
             org_id = context.user_data.get('organization_id')
+
+            # Calcular impuesto usando tasa configurada
+            subtotal = context.user_data.get('subtotal', 0)
+            impuesto = round(subtotal * settings.TAX_RATE)
+            total = subtotal + impuesto
 
             # Preparar datos de factura
             invoice_data = {
                 "organization_id": org_id,
                 "cliente_nombre": context.user_data.get('cliente_nombre'),
+                "cliente_direccion": context.user_data.get('cliente_direccion'),
+                "cliente_ciudad": context.user_data.get('cliente_ciudad'),
+                "cliente_email": context.user_data.get('cliente_email'),
                 "cliente_telefono": context.user_data.get('cliente_telefono'),
                 "cliente_cedula": context.user_data.get('cliente_cedula'),
                 "items": context.user_data.get('items', []),
-                "subtotal": context.user_data.get('subtotal', 0),
-                "total": context.user_data.get('total', 0),
+                "subtotal": subtotal,
+                "impuesto": impuesto,
+                "total": total,
                 "estado": InvoiceStatus.PENDIENTE.value,
                 "vendedor_id": context.user_data.get('user_id'),
                 "input_type": context.user_data.get('input_type'),
@@ -496,18 +555,46 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             if invoice:
                 logger.info(f"Factura creada: {invoice.numero_factura} por {context.user_data.get('cedula')}")
 
+                # Actualizar mensaje
+                await processing_msg.edit_text(
+                    f"Factura {invoice.numero_factura} guardada.\n"
+                    "Generando PDF..."
+                )
+
+                # Solicitar PDF a n8n
+                pdf_data = await _generar_pdf_factura(invoice, context)
+
                 rol = context.user_data.get('rol')
 
-                await update.message.reply_text(
-                    "FACTURA GENERADA\n"
-                    "=" * 30 + "\n\n"
-                    f"No. Factura: {invoice.numero_factura}\n"
-                    f"Cliente: {invoice.cliente_nombre}\n"
-                    f"Total: {format_currency(invoice.total)}\n"
-                    f"Estado: PENDIENTE\n\n"
-                    "La factura ha sido guardada exitosamente.",
-                    reply_markup=get_menu_keyboard(rol)
-                )
+                if pdf_data and pdf_data.success:
+                    # Enviar PDF al usuario
+                    await _enviar_pdf_usuario(update, context, invoice, pdf_data)
+
+                    await update.message.reply_text(
+                        "FACTURA GENERADA\n"
+                        "=" * 30 + "\n\n"
+                        f"No. Factura: {invoice.numero_factura}\n"
+                        f"Cliente: {invoice.cliente_nombre}\n"
+                        f"Subtotal: {format_currency(subtotal)}\n"
+                        f"IVA ({int(settings.TAX_RATE * 100)}%): {format_currency(impuesto)}\n"
+                        f"Total: {format_currency(total)}\n"
+                        f"Estado: PENDIENTE\n\n"
+                        "PDF enviado exitosamente.",
+                        reply_markup=get_menu_keyboard(rol)
+                    )
+                else:
+                    # Factura guardada pero sin PDF
+                    await update.message.reply_text(
+                        "FACTURA GENERADA\n"
+                        "=" * 30 + "\n\n"
+                        f"No. Factura: {invoice.numero_factura}\n"
+                        f"Cliente: {invoice.cliente_nombre}\n"
+                        f"Total: {format_currency(total)}\n"
+                        f"Estado: PENDIENTE\n\n"
+                        "Factura guardada.\n"
+                        "(PDF no disponible temporalmente)",
+                        reply_markup=get_menu_keyboard(rol)
+                    )
 
                 # Limpiar datos temporales
                 limpiar_datos_factura(context)
@@ -515,27 +602,151 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 return AuthStates.MENU_PRINCIPAL
 
             else:
-                await update.message.reply_text(
+                await processing_msg.edit_text(
                     "Error al guardar la factura.\n"
-                    "Por favor intenta de nuevo.",
-                    reply_markup=ReplyKeyboardRemove()
+                    "Por favor intenta de nuevo."
                 )
                 return GENERAR_FACTURA
 
         except Exception as e:
             logger.error(f"Error generando factura: {e}")
-            await update.message.reply_text(
-                f"Error: {str(e)}",
-                reply_markup=ReplyKeyboardRemove()
+            await processing_msg.edit_text(
+                f"Error: {str(e)}\n\n"
+                "Intenta de nuevo."
             )
             return GENERAR_FACTURA
 
     await update.message.reply_text(
-        "Opción no reconocida.\n"
+        "Opcion no reconocida.\n"
         "Selecciona CONFIRMAR o Cancelar:",
         reply_markup=get_generate_keyboard()
     )
     return GENERAR_FACTURA
+
+
+async def _generar_pdf_factura(invoice, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Solicita generación de PDF a n8n.
+
+    Args:
+        invoice: Objeto Invoice de la BD
+        context: Contexto de Telegram
+
+    Returns:
+        N8NPDFResponse o None si falla
+    """
+    try:
+        # Preparar datos para n8n
+        pdf_request_data = {
+            "id": str(invoice.id),
+            "numero_factura": invoice.numero_factura,
+            "fecha_emision": datetime.utcnow().strftime("%Y-%m-%d"),
+            "fecha_vencimiento": (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d"),
+            "cliente_nombre": invoice.cliente_nombre,
+            "cliente_direccion": invoice.cliente_direccion,
+            "cliente_ciudad": invoice.cliente_ciudad,
+            "cliente_email": invoice.cliente_email,
+            "cliente_telefono": invoice.cliente_telefono,
+            "cliente_cedula": invoice.cliente_cedula,
+            "items": invoice.items,
+            "subtotal": invoice.subtotal,
+            "descuento": invoice.descuento,
+            "impuesto": invoice.impuesto,
+            "total": invoice.total,
+            "vendedor_nombre": context.user_data.get('nombre'),
+            "vendedor_cedula": context.user_data.get('cedula'),
+            "notas": None
+        }
+
+        # Llamar a n8n
+        response = await n8n_service.generate_pdf(
+            invoice_data=pdf_request_data,
+            organization_id=str(invoice.organization_id)
+        )
+
+        return response
+
+    except Exception as e:
+        logger.error(f"Error solicitando PDF a n8n: {e}")
+        return None
+
+
+async def _enviar_pdf_usuario(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    invoice,
+    pdf_data
+) -> bool:
+    """
+    Envía el PDF generado al usuario.
+
+    Args:
+        update: Update de Telegram
+        context: Contexto de Telegram
+        invoice: Objeto Invoice
+        pdf_data: Respuesta de n8n con PDF
+
+    Returns:
+        True si se envió correctamente
+    """
+    try:
+        chat_id = update.effective_chat.id
+
+        if pdf_data.pdf_base64:
+            # Decodificar PDF de base64
+            pdf_bytes = base64.b64decode(pdf_data.pdf_base64)
+
+            # Crear directorio temporal si no existe
+            upload_dir = Path(settings.UPLOAD_DIR)
+            upload_dir.mkdir(exist_ok=True)
+
+            # Guardar PDF temporalmente
+            pdf_filename = f"factura_{invoice.numero_factura}.pdf"
+            pdf_path = upload_dir / pdf_filename
+
+            # Si el base64 es HTML (caso temporal), guardarlo como HTML
+            # En producción, n8n debería retornar PDF real
+            try:
+                # Intentar guardar como PDF
+                with open(pdf_path, 'wb') as f:
+                    f.write(pdf_bytes)
+
+                # Enviar documento
+                with open(pdf_path, 'rb') as f:
+                    await context.bot.send_document(
+                        chat_id=chat_id,
+                        document=f,
+                        filename=pdf_filename,
+                        caption=f"Factura {invoice.numero_factura}\nTotal: {format_currency(invoice.total)}"
+                    )
+
+                # Eliminar archivo temporal
+                pdf_path.unlink(missing_ok=True)
+
+                return True
+
+            except Exception as e:
+                logger.warning(f"Error enviando PDF como archivo: {e}")
+
+                # Fallback: enviar como mensaje si es HTML
+                if pdf_data.html:
+                    await update.message.reply_text(
+                        "PDF generado (vista previa disponible en sistema web)"
+                    )
+                return False
+
+        elif pdf_data.pdf_url:
+            # Enviar URL del PDF
+            await update.message.reply_text(
+                f"Tu factura está lista:\n{pdf_data.pdf_url}"
+            )
+            return True
+
+        return False
+
+    except Exception as e:
+        logger.error(f"Error enviando PDF: {e}")
+        return False
 
 
 async def cancelar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -574,11 +785,14 @@ def get_invoice_conversation_handler() -> ConversationHandler:
             DATOS_CLIENTE: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, datos_cliente)
             ],
-            CLIENTE_TELEFONO: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_telefono)
+            CLIENTE_DIRECCION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_direccion)
             ],
-            CLIENTE_CEDULA: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_cedula)
+            CLIENTE_CIUDAD: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_ciudad)
+            ],
+            CLIENTE_EMAIL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_email)
             ],
             GENERAR_FACTURA: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, generar_factura)
