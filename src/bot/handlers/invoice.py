@@ -4,7 +4,7 @@ Handlers de Facturación
 Maneja el flujo de creación de facturas con input de texto, voz o foto.
 """
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     MessageHandler,
     ConversationHandler,
@@ -17,47 +17,39 @@ from src.utils.logger import get_logger
 from src.database.connection import get_db
 from src.database.queries.invoice_queries import create_invoice
 from src.services.n8n_service import n8n_service
+from src.bot.handlers.shared import (
+    AuthStates,
+    InvoiceStates,
+    get_menu_keyboard,
+    get_input_type_keyboard,
+    get_confirm_keyboard,
+    get_generate_keyboard,
+    limpiar_datos_factura,
+    is_authenticated,
+    format_currency,
+    MENSAJES
+)
 from config.constants import InvoiceStatus, InputType
 from config.settings import settings
 
 logger = get_logger(__name__)
 
-# Estados de la conversación para facturas
-(
-    SELECCIONAR_INPUT,
-    RECIBIR_INPUT,
-    CONFIRMAR_DATOS,
-    EDITAR_ITEMS,
-    DATOS_CLIENTE,
-    CLIENTE_TELEFONO,
-    CLIENTE_CEDULA,
-    GENERAR_FACTURA
-) = range(100, 108)  # Usar rango diferente para no conflictos con auth
-
-# Teclado para seleccionar tipo de input
-INPUT_KEYBOARD = ReplyKeyboardMarkup([
-    ['Texto - Escribir items'],
-    ['Voz - Dictar items'],
-    ['Foto - Capturar lista'],
-    ['Cancelar']
-], resize_keyboard=True)
-
-# Teclado de confirmación
-CONFIRM_KEYBOARD = ReplyKeyboardMarkup([
-    ['Si, continuar'],
-    ['Editar manualmente'],
-    ['Cancelar']
-], resize_keyboard=True)
+# Estados de la conversación (aliases para compatibilidad)
+SELECCIONAR_INPUT = InvoiceStates.SELECCIONAR_INPUT
+RECIBIR_INPUT = InvoiceStates.RECIBIR_INPUT
+CONFIRMAR_DATOS = InvoiceStates.CONFIRMAR_DATOS
+EDITAR_ITEMS = InvoiceStates.EDITAR_ITEMS
+DATOS_CLIENTE = InvoiceStates.DATOS_CLIENTE
+CLIENTE_TELEFONO = InvoiceStates.CLIENTE_TELEFONO
+CLIENTE_CEDULA = InvoiceStates.CLIENTE_CEDULA
+GENERAR_FACTURA = InvoiceStates.GENERAR_FACTURA
 
 
 async def iniciar_nueva_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de crear una nueva factura"""
 
-    if not context.user_data.get('autenticado'):
-        await update.message.reply_text(
-            "Debes iniciar sesión primero.\n"
-            "Usa /start para comenzar."
-        )
+    if not is_authenticated(context):
+        await update.message.reply_text(MENSAJES['no_autenticado'])
         return ConversationHandler.END
 
     await update.message.reply_text(
@@ -67,7 +59,7 @@ async def iniciar_nueva_factura(update: Update, context: ContextTypes.DEFAULT_TY
         "- Texto: escribe los productos\n"
         "- Voz: dicta los productos\n"
         "- Foto: toma foto de lista/ticket",
-        reply_markup=INPUT_KEYBOARD
+        reply_markup=get_input_type_keyboard()
     )
 
     return SELECCIONAR_INPUT
@@ -78,14 +70,12 @@ async def seleccionar_tipo_input(update: Update, context: ContextTypes.DEFAULT_T
     opcion = update.message.text.lower()
 
     if 'cancelar' in opcion:
-        from src.bot.handlers.auth import get_menu_keyboard
         rol = context.user_data.get('rol')
         await update.message.reply_text(
-            "Operación cancelada.\n\n"
-            "¿Qué deseas hacer?",
+            MENSAJES['operacion_cancelada'],
             reply_markup=get_menu_keyboard(rol)
         )
-        return 2  # MENU_PRINCIPAL de auth
+        return AuthStates.MENU_PRINCIPAL
 
     if 'texto' in opcion:
         context.user_data['input_type'] = InputType.TEXTO.value
@@ -131,7 +121,7 @@ async def seleccionar_tipo_input(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text(
         "Opción no reconocida.\n"
         "Selecciona una opción del teclado:",
-        reply_markup=INPUT_KEYBOARD
+        reply_markup=get_input_type_keyboard()
     )
     return SELECCIONAR_INPUT
 
@@ -229,7 +219,7 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 subtotal = precio * cantidad
                 total += subtotal
                 items_text += f"{i}. {item.get('descripcion', 'Sin descripción')}\n"
-                items_text += f"   Cantidad: {cantidad} x ${precio:,.0f} = ${subtotal:,.0f}\n\n"
+                items_text += f"   Cantidad: {cantidad} x {format_currency(precio)} = {format_currency(subtotal)}\n\n"
 
             context.user_data['subtotal'] = total
             context.user_data['total'] = total
@@ -238,7 +228,7 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 "ITEMS DETECTADOS\n"
                 "=" * 25 + "\n\n"
                 f"{items_text}"
-                f"SUBTOTAL: ${total:,.0f}\n\n"
+                f"SUBTOTAL: {format_currency(total)}\n\n"
             )
 
             if response.transcripcion:
@@ -249,7 +239,7 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await processing_msg.edit_text(mensaje)
             await update.message.reply_text(
                 "Confirma los datos:",
-                reply_markup=CONFIRM_KEYBOARD
+                reply_markup=get_confirm_keyboard()
             )
 
             return CONFIRMAR_DATOS
@@ -286,17 +276,13 @@ async def confirmar_datos(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     opcion = update.message.text.lower()
 
     if 'cancelar' in opcion:
-        from src.bot.handlers.auth import get_menu_keyboard
         rol = context.user_data.get('rol')
         await update.message.reply_text(
-            "Operación cancelada.\n\n"
-            "¿Qué deseas hacer?",
+            MENSAJES['operacion_cancelada'],
             reply_markup=get_menu_keyboard(rol)
         )
-        # Limpiar datos temporales
-        for key in ['items', 'input_type', 'input_raw', 'subtotal', 'total', 'transcripcion']:
-            context.user_data.pop(key, None)
-        return 2  # MENU_PRINCIPAL
+        limpiar_datos_factura(context)
+        return AuthStates.MENU_PRINCIPAL
 
     if 'si' in opcion or 'continuar' in opcion:
         await update.message.reply_text(
@@ -323,7 +309,7 @@ async def confirmar_datos(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text(
         "Opción no reconocida.\n"
         "Selecciona una opción:",
-        reply_markup=CONFIRM_KEYBOARD
+        reply_markup=get_confirm_keyboard()
     )
     return CONFIRMAR_DATOS
 
@@ -382,13 +368,13 @@ async def editar_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         context.user_data['items'] = items
 
         await update.message.reply_text(
-            f"Item agregado: {descripcion} - ${precio:,.0f}\n\n"
+            f"Item agregado: {descripcion} - {format_currency(precio)}\n\n"
             f"Total items: {len(items)}\n\n"
             "Ingresa otro item o escribe 'listo':"
         )
         return EDITAR_ITEMS
 
-    except (ValueError, IndexError) as e:
+    except (ValueError, IndexError):
         await update.message.reply_text(
             "No pude entender el precio.\n"
             "Usa: descripción - $precio\n"
@@ -447,8 +433,7 @@ async def cliente_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     items_text = ""
     for item in items:
         precio = item.get('precio', 0)
-        cantidad = item.get('cantidad', 1)
-        items_text += f"  - {item.get('descripcion')}: ${precio:,.0f}\n"
+        items_text += f"  - {item.get('descripcion')}: {format_currency(precio)}\n"
 
     mensaje = (
         "RESUMEN DE FACTURA\n"
@@ -457,17 +442,14 @@ async def cliente_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         f"Teléfono: {context.user_data.get('cliente_telefono', 'N/A')}\n"
         f"Cédula: {context.user_data.get('cliente_cedula', 'N/A')}\n\n"
         f"Items:\n{items_text}\n"
-        f"SUBTOTAL: ${subtotal:,.0f}\n"
-        f"TOTAL: ${total:,.0f}\n\n"
+        f"SUBTOTAL: {format_currency(subtotal)}\n"
+        f"TOTAL: {format_currency(total)}\n\n"
         "¿Confirmar y generar factura?"
     )
 
     await update.message.reply_text(
         mensaje,
-        reply_markup=ReplyKeyboardMarkup([
-            ['CONFIRMAR Y GENERAR'],
-            ['Cancelar']
-        ], resize_keyboard=True)
+        reply_markup=get_generate_keyboard()
     )
 
     return GENERAR_FACTURA
@@ -478,23 +460,22 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     opcion = update.message.text.lower()
 
     if 'cancelar' in opcion:
-        from src.bot.handlers.auth import get_menu_keyboard
         rol = context.user_data.get('rol')
         await update.message.reply_text(
-            "Operación cancelada.\n\n"
-            "¿Qué deseas hacer?",
+            MENSAJES['operacion_cancelada'],
             reply_markup=get_menu_keyboard(rol)
         )
-        # Limpiar datos temporales
         limpiar_datos_factura(context)
-        return 2  # MENU_PRINCIPAL
+        return AuthStates.MENU_PRINCIPAL
 
     if 'confirmar' in opcion or 'generar' in opcion:
         try:
             db = next(get_db())
+            org_id = context.user_data.get('organization_id')
 
             # Preparar datos de factura
             invoice_data = {
+                "organization_id": org_id,
                 "cliente_nombre": context.user_data.get('cliente_nombre'),
                 "cliente_telefono": context.user_data.get('cliente_telefono'),
                 "cliente_cedula": context.user_data.get('cliente_cedula'),
@@ -515,7 +496,6 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             if invoice:
                 logger.info(f"Factura creada: {invoice.numero_factura} por {context.user_data.get('cedula')}")
 
-                from src.bot.handlers.auth import get_menu_keyboard
                 rol = context.user_data.get('rol')
 
                 await update.message.reply_text(
@@ -523,7 +503,7 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     "=" * 30 + "\n\n"
                     f"No. Factura: {invoice.numero_factura}\n"
                     f"Cliente: {invoice.cliente_nombre}\n"
-                    f"Total: ${invoice.total:,.0f}\n"
+                    f"Total: {format_currency(invoice.total)}\n"
                     f"Estado: PENDIENTE\n\n"
                     "La factura ha sido guardada exitosamente.",
                     reply_markup=get_menu_keyboard(rol)
@@ -532,7 +512,7 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 # Limpiar datos temporales
                 limpiar_datos_factura(context)
 
-                return 2  # MENU_PRINCIPAL
+                return AuthStates.MENU_PRINCIPAL
 
             else:
                 await update.message.reply_text(
@@ -553,38 +533,21 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text(
         "Opción no reconocida.\n"
         "Selecciona CONFIRMAR o Cancelar:",
-        reply_markup=ReplyKeyboardMarkup([
-            ['CONFIRMAR Y GENERAR'],
-            ['Cancelar']
-        ], resize_keyboard=True)
+        reply_markup=get_generate_keyboard()
     )
     return GENERAR_FACTURA
 
 
-def limpiar_datos_factura(context: ContextTypes.DEFAULT_TYPE):
-    """Limpia los datos temporales de factura del contexto"""
-    keys_to_remove = [
-        'items', 'cliente_nombre', 'cliente_telefono', 'cliente_cedula',
-        'subtotal', 'total', 'input_type', 'input_raw', 'transcripcion',
-        'manual_mode'
-    ]
-    for key in keys_to_remove:
-        context.user_data.pop(key, None)
-
-
 async def cancelar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancela la creación de factura"""
-    from src.bot.handlers.auth import get_menu_keyboard
-
     limpiar_datos_factura(context)
     rol = context.user_data.get('rol')
 
     await update.message.reply_text(
-        "Operación cancelada.\n\n"
-        "¿Qué deseas hacer?",
+        MENSAJES['operacion_cancelada'],
         reply_markup=get_menu_keyboard(rol)
     )
-    return 2  # MENU_PRINCIPAL
+    return AuthStates.MENU_PRINCIPAL
 
 
 def get_invoice_conversation_handler() -> ConversationHandler:
@@ -625,6 +588,6 @@ def get_invoice_conversation_handler() -> ConversationHandler:
             MessageHandler(filters.Regex(r'^Cancelar$'), cancelar_factura)
         ],
         map_to_parent={
-            2: 2  # Mapear MENU_PRINCIPAL al del auth handler
+            AuthStates.MENU_PRINCIPAL: AuthStates.MENU_PRINCIPAL
         }
     )

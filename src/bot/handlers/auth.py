@@ -4,7 +4,7 @@ Handlers de Autenticación
 Maneja el flujo de login, logout y gestión de sesión.
 """
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     CommandHandler,
     MessageHandler,
@@ -17,12 +17,23 @@ from src.utils.logger import get_logger
 from src.utils.crypto import verify_password
 from src.database.connection import get_db, init_db, create_tables
 from src.database.queries.user_queries import get_user_by_cedula, update_last_login
+from src.database.queries.invoice_queries import get_invoices_by_vendedor
+from src.bot.handlers.shared import (
+    AuthStates,
+    get_menu_keyboard,
+    limpiar_sesion,
+    format_invoice_status,
+    format_currency,
+    MENSAJES
+)
 from config.constants import UserRole
 
 logger = get_logger(__name__)
 
-# Estados de la conversación
-CEDULA, PASSWORD, MENU_PRINCIPAL = range(3)
+# Estados de la conversación (aliases para compatibilidad)
+CEDULA = AuthStates.CEDULA
+PASSWORD = AuthStates.PASSWORD
+MENU_PRINCIPAL = AuthStates.MENU_PRINCIPAL
 
 # Inicializar base de datos al importar
 try:
@@ -33,37 +44,13 @@ except Exception as e:
     logger.warning(f"No se pudo inicializar base de datos: {e}")
 
 
-def get_menu_keyboard(rol: str) -> ReplyKeyboardMarkup:
-    """Retorna el teclado del menú según el rol del usuario"""
-    teclado = [
-        ['1. Nueva Factura'],
-        ['2. Mis Facturas'],
-        ['3. Buscar Factura']
-    ]
-
-    if rol == UserRole.ADMIN.value:
-        teclado.append(['4. Crear Usuario'])
-
-    teclado.append(['Cerrar Sesion'])
-
-    return ReplyKeyboardMarkup(teclado, resize_keyboard=True)
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Comando /start - Inicio del bot"""
     user = update.effective_user
 
     logger.info(f"Usuario Telegram {user.id} inició el bot")
 
-    mensaje = (
-        "JOYERIA - SISTEMA DE FACTURACION\n"
-        "================================\n\n"
-        "Bienvenido al sistema de facturación\n"
-        "para joyerías.\n\n"
-        "Para comenzar, ingresa tu número de cédula:"
-    )
-
-    await update.message.reply_text(mensaje)
+    await update.message.reply_text(MENSAJES['bienvenida'])
 
     return CEDULA
 
@@ -87,18 +74,12 @@ async def recibir_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         db.close()
 
         if not usuario:
-            await update.message.reply_text(
-                "Usuario no encontrado.\n\n"
-                "Contacta al administrador para registrarte."
-            )
+            await update.message.reply_text(MENSAJES['usuario_no_encontrado'])
             logger.warning(f"Intento de login con cédula inexistente: {cedula}")
             return ConversationHandler.END
 
         if not usuario.activo:
-            await update.message.reply_text(
-                "Usuario inactivo.\n\n"
-                "Contacta al administrador."
-            )
+            await update.message.reply_text(MENSAJES['usuario_inactivo'])
             logger.warning(f"Intento de login en usuario inactivo: {cedula}")
             return ConversationHandler.END
 
@@ -108,6 +89,7 @@ async def recibir_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data['nombre'] = usuario.nombre_completo
         context.user_data['rol'] = usuario.rol
         context.user_data['password_hash'] = usuario.password_hash
+        context.user_data['organization_id'] = usuario.organization_id
 
         await update.message.reply_text(
             f"Hola {usuario.nombre_completo}\n\n"
@@ -118,10 +100,7 @@ async def recibir_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     except Exception as e:
         logger.error(f"Error al buscar usuario: {e}")
-        await update.message.reply_text(
-            "Error al conectar con la base de datos.\n\n"
-            "Intenta más tarde."
-        )
+        await update.message.reply_text(MENSAJES['error_conexion'])
         return ConversationHandler.END
 
 
@@ -139,12 +118,9 @@ async def recibir_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     # Verificar contraseña
     if not verify_password(password, password_hash):
-        await update.message.reply_text(
-            "Contraseña incorrecta.\n\n"
-            "Intenta nuevamente con /start"
-        )
+        await update.message.reply_text(MENSAJES['password_incorrecta'])
         logger.warning(f"Contraseña incorrecta para usuario: {cedula}")
-        context.user_data.clear()
+        limpiar_sesion(context)
         return ConversationHandler.END
 
     # Actualizar último login
@@ -180,7 +156,7 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     opcion = update.message.text
 
     if '1.' in opcion or 'Nueva Factura' in opcion:
-        # Redirigir al handler de facturas
+        # Importar aquí para evitar circular import en el flujo
         from src.bot.handlers.invoice import iniciar_nueva_factura
         return await iniciar_nueva_factura(update, context)
 
@@ -210,11 +186,10 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     elif 'Cerrar' in opcion:
         await update.message.reply_text(
-            "Hasta pronto!\n\n"
-            "Sesión cerrada.",
+            MENSAJES['sesion_cerrada'],
             reply_markup=ReplyKeyboardRemove()
         )
-        context.user_data.clear()
+        limpiar_sesion(context)
         return ConversationHandler.END
 
     # Si no coincide con ninguna opción, mostrar menú de nuevo
@@ -229,13 +204,12 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def mostrar_mis_facturas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra las facturas del vendedor actual"""
-    from src.database.queries.invoice_queries import get_invoices_by_vendedor
-
     user_id = context.user_data.get('user_id')
+    org_id = context.user_data.get('organization_id')
 
     try:
         db = next(get_db())
-        facturas = get_invoices_by_vendedor(db, user_id, limit=10)
+        facturas = get_invoices_by_vendedor(db, user_id, org_id, limit=10)
         db.close()
 
         if not facturas:
@@ -249,17 +223,12 @@ async def mostrar_mis_facturas(update: Update, context: ContextTypes.DEFAULT_TYP
         mensaje += "=" * 30 + "\n\n"
 
         for f in facturas:
-            estado_emoji = {
-                "BORRADOR": "📝",
-                "PENDIENTE": "⏳",
-                "PAGADA": "✅",
-                "ANULADA": "❌"
-            }.get(f.estado, "📋")
-
-            mensaje += f"{estado_emoji} {f.numero_factura}\n"
+            estado_formatted = format_invoice_status(f.estado)
+            mensaje += f"{estado_formatted}\n"
+            mensaje += f"   No: {f.numero_factura}\n"
             mensaje += f"   Cliente: {f.cliente_nombre}\n"
-            mensaje += f"   Total: ${f.total:,.0f}\n"
-            mensaje += f"   Fecha: {f.fecha_creacion.strftime('%d/%m/%Y')}\n\n"
+            mensaje += f"   Total: {format_currency(f.total)}\n"
+            mensaje += f"   Fecha: {f.created_at.strftime('%d/%m/%Y')}\n\n"
 
         await update.message.reply_text(mensaje)
 
@@ -277,7 +246,7 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "Operación cancelada.",
         reply_markup=ReplyKeyboardRemove()
     )
-    context.user_data.clear()
+    limpiar_sesion(context)
     return ConversationHandler.END
 
 

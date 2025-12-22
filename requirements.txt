@@ -2,7 +2,10 @@
 python-telegram-bot>=22.0
 
 # Base de datos
-sqlalchemy>=2.0.0
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.29.0
+aiosqlite>=0.19.0
+alembic>=1.13.0
 
 # Validación
 pydantic>=2.5.0
@@ -11,9 +14,28 @@ pydantic-settings>=2.1.0
 # Seguridad
 passlib>=1.7.4
 bcrypt>=4.1.1
+pyjwt>=2.8.0
+cryptography>=41.0.0
+bleach>=6.1.0
 
 # HTTP requests (para n8n)
 httpx>=0.25.0
 
 # Utilidades
 python-dotenv>=1.0.0
+
+# Logging estructurado
+structlog>=23.2.0
+python-json-logger>=2.0.0
+
+# Monitoring
+prometheus-client>=0.19.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# Code Quality
+ruff>=0.1.0
+mypy>=1.7.0
