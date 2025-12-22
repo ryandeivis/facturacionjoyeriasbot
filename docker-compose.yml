@@ -1,0 +1,113 @@
+# Docker Compose configuration for Jewelry Invoice Bot
+# Supports both development and production environments
+
+version: '3.8'
+
+services:
+  # ============================================================================
+  # BOT SERVICE
+  # ============================================================================
+  bot:
+    build:
+      context: .
+      target: ${BUILD_TARGET:-production}
+    container_name: jewelry-invoice-bot
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DATABASE_URL=postgresql+asyncpg://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-jewelry_db}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - SECRET_KEY=${SECRET_KEY}
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - bot_logs:/app/logs
+      - bot_data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - jewelry-network
+
+  # ============================================================================
+  # DATABASE SERVICE
+  # ============================================================================
+  db:
+    image: postgres:15-alpine
+    container_name: jewelry-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME:-jewelry_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jewelry-network
+
+  # ============================================================================
+  # MIGRATIONS SERVICE (run once)
+  # ============================================================================
+  migrations:
+    build:
+      context: .
+      target: production
+    container_name: jewelry-migrations
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-jewelry_db}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - jewelry-network
+    profiles:
+      - migrate
+
+  # ============================================================================
+  # N8N SERVICE (optional)
+  # ============================================================================
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: jewelry-n8n
+    restart: unless-stopped
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+      - WEBHOOK_URL=${N8N_WEBHOOK_BASE_URL:-http://localhost:5678}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    networks:
+      - jewelry-network
+    profiles:
+      - n8n
+
+# ============================================================================
+# VOLUMES
+# ============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  bot_logs:
+    driver: local
+  bot_data:
+    driver: local
+  n8n_data:
+    driver: local
+
+# ============================================================================
+# NETWORKS
+# ============================================================================
+networks:
+  jewelry-network:
+    driver: bridge
