@@ -678,40 +678,70 @@ async def _enviar_pdf_usuario(
     pdf_data
 ) -> bool:
     """
-    Envía el PDF generado al usuario.
+    Envía el PDF y HTML generados al usuario.
 
     Args:
         update: Update de Telegram
         context: Contexto de Telegram
         invoice: Objeto Invoice
-        pdf_data: Respuesta de n8n con PDF
+        pdf_data: Respuesta de n8n con PDF y HTML
 
     Returns:
         True si se envió correctamente
     """
     try:
         chat_id = update.effective_chat.id
+        upload_dir = Path(settings.UPLOAD_DIR)
+        upload_dir.mkdir(exist_ok=True)
 
-        if pdf_data.pdf_base64:
-            # Decodificar PDF de base64
-            pdf_bytes = base64.b64decode(pdf_data.pdf_base64)
+        pdf_enviado = False
+        html_enviado = False
 
-            # Crear directorio temporal si no existe
-            upload_dir = Path(settings.UPLOAD_DIR)
-            upload_dir.mkdir(exist_ok=True)
-
-            # Guardar PDF temporalmente
-            pdf_filename = f"factura_{invoice.numero_factura}.pdf"
-            pdf_path = upload_dir / pdf_filename
-
-            # Si el base64 es HTML (caso temporal), guardarlo como HTML
-            # En producción, n8n debería retornar PDF real
+        # 1. Enviar PDF (desde URL de Drive o base64)
+        if pdf_data.pdf_url:
             try:
-                # Intentar guardar como PDF
+                # Descargar PDF desde Google Drive
+                import aiohttp
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(pdf_data.pdf_url) as resp:
+                        if resp.status == 200:
+                            pdf_bytes = await resp.read()
+                            pdf_filename = pdf_data.filename or f"factura_{invoice.numero_factura}.pdf"
+
+                            # Guardar temporalmente
+                            pdf_path = upload_dir / pdf_filename
+                            with open(pdf_path, 'wb') as f:
+                                f.write(pdf_bytes)
+
+                            # Enviar documento
+                            with open(pdf_path, 'rb') as f:
+                                await context.bot.send_document(
+                                    chat_id=chat_id,
+                                    document=f,
+                                    filename=pdf_filename,
+                                    caption=f"Factura {invoice.numero_factura}\nTotal: {format_currency(invoice.total)}"
+                                )
+
+                            pdf_path.unlink(missing_ok=True)
+                            pdf_enviado = True
+            except Exception as e:
+                logger.warning(f"Error descargando PDF desde URL: {e}")
+                # Fallback: enviar link
+                if pdf_data.pdf_view_url:
+                    await update.message.reply_text(
+                        f"PDF disponible en:\n{pdf_data.pdf_view_url}"
+                    )
+                    pdf_enviado = True
+
+        elif pdf_data.pdf_base64:
+            try:
+                pdf_bytes = base64.b64decode(pdf_data.pdf_base64)
+                pdf_filename = pdf_data.filename or f"factura_{invoice.numero_factura}.pdf"
+                pdf_path = upload_dir / pdf_filename
+
                 with open(pdf_path, 'wb') as f:
                     f.write(pdf_bytes)
 
-                # Enviar documento
                 with open(pdf_path, 'rb') as f:
                     await context.bot.send_document(
                         chat_id=chat_id,
@@ -720,32 +750,39 @@ async def _enviar_pdf_usuario(
                         caption=f"Factura {invoice.numero_factura}\nTotal: {format_currency(invoice.total)}"
                     )
 
-                # Eliminar archivo temporal
                 pdf_path.unlink(missing_ok=True)
-
-                return True
+                pdf_enviado = True
 
             except Exception as e:
-                logger.warning(f"Error enviando PDF como archivo: {e}")
+                logger.warning(f"Error enviando PDF base64: {e}")
 
-                # Fallback: enviar como mensaje si es HTML
-                if pdf_data.html:
-                    await update.message.reply_text(
-                        "PDF generado (vista previa disponible en sistema web)"
+        # 2. Enviar HTML como archivo adjunto
+        if pdf_data.html:
+            try:
+                html_filename = f"factura_{invoice.numero_factura}.html"
+                html_path = upload_dir / html_filename
+
+                with open(html_path, 'w', encoding='utf-8') as f:
+                    f.write(pdf_data.html)
+
+                with open(html_path, 'rb') as f:
+                    await context.bot.send_document(
+                        chat_id=chat_id,
+                        document=f,
+                        filename=html_filename,
+                        caption="Vista web de la factura (abrir en navegador)"
                     )
-                return False
 
-        elif pdf_data.pdf_url:
-            # Enviar URL del PDF
-            await update.message.reply_text(
-                f"Tu factura está lista:\n{pdf_data.pdf_url}"
-            )
-            return True
+                html_path.unlink(missing_ok=True)
+                html_enviado = True
 
-        return False
+            except Exception as e:
+                logger.warning(f"Error enviando HTML: {e}")
+
+        return pdf_enviado or html_enviado
 
     except Exception as e:
-        logger.error(f"Error enviando PDF: {e}")
+        logger.error(f"Error enviando documentos: {e}")
         return False
 
 

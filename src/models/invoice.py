@@ -129,5 +129,10 @@ class N8NPDFResponse(BaseModel):
     """Respuesta de n8n al generar PDF"""
     success: bool = False
     pdf_url: Optional[str] = None
+    pdf_view_url: Optional[str] = None
+    pdf_file_id: Optional[str] = None
     pdf_base64: Optional[str] = None
+    html: Optional[str] = None
+    filename: Optional[str] = None
+    numero_factura: Optional[str] = None
     error: Optional[str] = None

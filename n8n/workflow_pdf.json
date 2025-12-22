@@ -17,169 +17,199 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "check-generar",
-              "leftValue": "={{ $json.body.tipo_evento }}",
-              "rightValue": "generar_pdf",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [220, 0],
-      "id": "is-generar-pdf",
-      "name": "Es Generar PDF?"
-    },
-    {
-      "parameters": {
-        "jsCode": "// Datos de la factura desde el webhook\nconst data = $input.first().json.body;\n\n// Formatear moneda colombiana\nconst formatCOP = (num) => {\n  return new Intl.NumberFormat('es-CO', {\n    style: 'currency',\n    currency: 'COP',\n    minimumFractionDigits: 0,\n    maximumFractionDigits: 0\n  }).format(num);\n};\n\n// Generar filas de items\nlet itemsRows = '';\nconst items = data.items || [];\nitems.forEach((item, index) => {\n  const total = (item.cantidad || 1) * (item.precio || 0);\n  itemsRows += `\n    <tr>\n      <td style=\"padding: 10px; border-bottom: 1px solid #eee;\">${index + 1}</td>\n      <td style=\"padding: 10px; border-bottom: 1px solid #eee;\">\n        <strong>${item.nombre || 'Producto'}</strong>\n        ${item.descripcion ? '<br><small style=\"color: #666;\">' + item.descripcion + '</small>' : ''}\n      </td>\n      <td style=\"padding: 10px; border-bottom: 1px solid #eee; text-align: center;\">${item.cantidad || 1}</td>\n      <td style=\"padding: 10px; border-bottom: 1px solid #eee; text-align: right;\">${formatCOP(item.precio || 0)}</td>\n      <td style=\"padding: 10px; border-bottom: 1px solid #eee; text-align: right;\">${formatCOP(total)}</td>\n    </tr>\n  `;\n});\n\n// Datos del cliente\nconst cliente = data.cliente || {};\nconst factura = data.factura || {};\nconst totales = data.totales || {};\nconst vendedor = data.vendedor || {};\n\n// Generar HTML de la factura\nconst html = `\n<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n  <meta charset=\"UTF-8\">\n  <style>\n    body {\n      font-family: 'Segoe UI', Arial, sans-serif;\n      margin: 0;\n      padding: 20px;\n      background: #f5f5f5;\n    }\n    .invoice-container {\n      max-width: 800px;\n      margin: 0 auto;\n      background: white;\n      padding: 30px;\n      box-shadow: 0 2px 10px rgba(0,0,0,0.1);\n    }\n    .header {\n      display: flex;\n      justify-content: space-between;\n      border-bottom: 3px solid #c9a227;\n      padding-bottom: 20px;\n      margin-bottom: 30px;\n    }\n    .logo h1 {\n      color: #c9a227;\n      margin: 0;\n      font-size: 28px;\n    }\n    .logo p {\n      color: #666;\n      margin: 5px 0 0;\n    }\n    .invoice-info {\n      text-align: right;\n    }\n    .invoice-info h2 {\n      color: #333;\n      margin: 0 0 10px;\n    }\n    .invoice-info p {\n      margin: 5px 0;\n      color: #666;\n    }\n    .section {\n      margin-bottom: 25px;\n    }\n    .section-title {\n      font-size: 14px;\n      color: #999;\n      text-transform: uppercase;\n      margin-bottom: 10px;\n      border-bottom: 1px solid #eee;\n      padding-bottom: 5px;\n    }\n    .client-info p {\n      margin: 5px 0;\n      color: #333;\n    }\n    .items-table {\n      width: 100%;\n      border-collapse: collapse;\n      margin-top: 10px;\n    }\n    .items-table th {\n      background: #f8f8f8;\n      padding: 12px 10px;\n      text-align: left;\n      font-weight: 600;\n      color: #333;\n      border-bottom: 2px solid #c9a227;\n    }\n    .items-table th:nth-child(3),\n    .items-table th:nth-child(4),\n    .items-table th:nth-child(5) {\n      text-align: right;\n    }\n    .totals {\n      margin-top: 20px;\n      text-align: right;\n    }\n    .totals table {\n      margin-left: auto;\n      width: 300px;\n    }\n    .totals td {\n      padding: 8px 10px;\n    }\n    .totals .total-row {\n      font-size: 18px;\n      font-weight: bold;\n      color: #c9a227;\n      border-top: 2px solid #c9a227;\n    }\n    .footer {\n      margin-top: 40px;\n      padding-top: 20px;\n      border-top: 1px solid #eee;\n      text-align: center;\n      color: #999;\n      font-size: 12px;\n    }\n    .notes {\n      background: #f9f9f9;\n      padding: 15px;\n      border-radius: 5px;\n      color: #666;\n      font-style: italic;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"invoice-container\">\n    <div class=\"header\">\n      <div class=\"logo\">\n        <h1>JOYERIA</h1>\n        <p>Sistema de Facturacion</p>\n      </div>\n      <div class=\"invoice-info\">\n        <h2>FACTURA</h2>\n        <p><strong>No.</strong> ${factura.numero || 'BORRADOR'}</p>\n        <p><strong>Fecha:</strong> ${factura.fecha_emision || new Date().toLocaleDateString('es-CO')}</p>\n        ${factura.fecha_vencimiento ? '<p><strong>Vence:</strong> ' + factura.fecha_vencimiento + '</p>' : ''}\n      </div>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Cliente</div>\n      <div class=\"client-info\">\n        <p><strong>${cliente.nombre || 'Cliente'}</strong></p>\n        ${cliente.direccion ? '<p>' + cliente.direccion + '</p>' : ''}\n        ${cliente.ciudad ? '<p>' + cliente.ciudad + '</p>' : ''}\n        ${cliente.email ? '<p>Email: ' + cliente.email + '</p>' : ''}\n        ${cliente.telefono ? '<p>Tel: ' + cliente.telefono + '</p>' : ''}\n        ${cliente.cedula ? '<p>CC/NIT: ' + cliente.cedula + '</p>' : ''}\n      </div>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Detalle</div>\n      <table class=\"items-table\">\n        <thead>\n          <tr>\n            <th width=\"5%\">#</th>\n            <th width=\"45%\">Descripcion</th>\n            <th width=\"10%\">Cant.</th>\n            <th width=\"20%\">Precio Unit.</th>\n            <th width=\"20%\">Total</th>\n          </tr>\n        </thead>\n        <tbody>\n          ${itemsRows}\n        </tbody>\n      </table>\n    </div>\n    \n    <div class=\"totals\">\n      <table>\n        <tr>\n          <td>Subtotal:</td>\n          <td>${formatCOP(totales.subtotal || 0)}</td>\n        </tr>\n        ${totales.descuento > 0 ? '<tr><td>Descuento:</td><td>-' + formatCOP(totales.descuento) + '</td></tr>' : ''}\n        <tr>\n          <td>IVA (19%):</td>\n          <td>${formatCOP(totales.impuesto || 0)}</td>\n        </tr>\n        <tr class=\"total-row\">\n          <td>TOTAL:</td>\n          <td>${formatCOP(totales.total || 0)}</td>\n        </tr>\n      </table>\n    </div>\n    \n    ${data.notas ? '<div class=\"section\"><div class=\"section-title\">Notas</div><div class=\"notes\">' + data.notas + '</div></div>' : ''}\n    \n    <div class=\"footer\">\n      <p>Vendedor: ${vendedor.nombre || 'N/A'} ${vendedor.cedula ? '(' + vendedor.cedula + ')' : ''}</p>\n      <p>Documento generado automaticamente - Jewelry Invoice Bot</p>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn {\n  html: html,\n  factura_numero: factura.numero,\n  organization_id: data.organization_id\n};"
+        "jsCode": "// Datos de la factura desde el webhook\nconst data = $input.first().json.body;\n\n// Formatear moneda colombiana\nconst formatCOP = (num) => {\n  return new Intl.NumberFormat('es-CO', {\n    style: 'currency',\n    currency: 'COP',\n    minimumFractionDigits: 0,\n    maximumFractionDigits: 0\n  }).format(num);\n};\n\n// Generar filas de items\nlet itemsRows = '';\nconst items = data.items || [];\nitems.forEach((item, index) => {\n  const cantidad = item.cantidad || 1;\n  const precio = item.precio || 0;\n  const total = cantidad * precio;\n  itemsRows += `\n    <tr>\n      <td style=\"padding: 10px; border-bottom: 1px solid #eee;\">${index + 1}</td>\n      <td style=\"padding: 10px; border-bottom: 1px solid #eee;\">\n        <strong>${item.nombre || item.descripcion || 'Producto'}</strong>\n        ${item.descripcion && item.nombre ? '<br><small style=\"color: #666;\">' + item.descripcion + '</small>' : ''}\n      </td>\n      <td style=\"padding: 10px; border-bottom: 1px solid #eee; text-align: center;\">${cantidad}</td>\n      <td style=\"padding: 10px; border-bottom: 1px solid #eee; text-align: right;\">${formatCOP(precio)}</td>\n      <td style=\"padding: 10px; border-bottom: 1px solid #eee; text-align: right;\">${formatCOP(total)}</td>\n    </tr>\n  `;\n});\n\n// Datos\nconst numeroFactura = data.numero_factura || 'BORRADOR';\nconst fechaEmision = data.fecha_emision || new Date().toLocaleDateString('es-CO');\nconst fechaVencimiento = data.fecha_vencimiento || '';\nconst clienteNombre = data.cliente_nombre || 'Cliente';\nconst clienteDireccion = data.cliente_direccion || '';\nconst clienteCiudad = data.cliente_ciudad || '';\nconst clienteEmail = data.cliente_email || '';\nconst clienteTelefono = data.cliente_telefono || '';\nconst clienteCedula = data.cliente_cedula || '';\nconst subtotal = data.subtotal || 0;\nconst descuento = data.descuento || 0;\nconst impuesto = data.impuesto || 0;\nconst total = data.total || 0;\nconst vendedorNombre = data.vendedor_nombre || 'N/A';\nconst vendedorCedula = data.vendedor_cedula || '';\nconst notas = data.notas || '';\n\n// Generar HTML de la factura\nconst html = `\n<!DOCTYPE html>\n<html lang=\"es\">\n<head>\n  <meta charset=\"UTF-8\">\n  <style>\n    body {\n      font-family: 'Segoe UI', Arial, sans-serif;\n      margin: 0;\n      padding: 20px;\n      background: #f5f5f5;\n    }\n    .invoice-container {\n      max-width: 800px;\n      margin: 0 auto;\n      background: white;\n      padding: 30px;\n      box-shadow: 0 2px 10px rgba(0,0,0,0.1);\n    }\n    .header {\n      display: flex;\n      justify-content: space-between;\n      border-bottom: 3px solid #c9a227;\n      padding-bottom: 20px;\n      margin-bottom: 30px;\n    }\n    .logo h1 {\n      color: #c9a227;\n      margin: 0;\n      font-size: 28px;\n    }\n    .logo p {\n      color: #666;\n      margin: 5px 0 0;\n    }\n    .invoice-info {\n      text-align: right;\n    }\n    .invoice-info h2 {\n      color: #333;\n      margin: 0 0 10px;\n    }\n    .invoice-info p {\n      margin: 5px 0;\n      color: #666;\n    }\n    .section {\n      margin-bottom: 25px;\n    }\n    .section-title {\n      font-size: 14px;\n      color: #999;\n      text-transform: uppercase;\n      margin-bottom: 10px;\n      border-bottom: 1px solid #eee;\n      padding-bottom: 5px;\n    }\n    .client-info p {\n      margin: 5px 0;\n      color: #333;\n    }\n    .items-table {\n      width: 100%;\n      border-collapse: collapse;\n      margin-top: 10px;\n    }\n    .items-table th {\n      background: #f8f8f8;\n      padding: 12px 10px;\n      text-align: left;\n      font-weight: 600;\n      color: #333;\n      border-bottom: 2px solid #c9a227;\n    }\n    .items-table th:nth-child(3),\n    .items-table th:nth-child(4),\n    .items-table th:nth-child(5) {\n      text-align: right;\n    }\n    .totals {\n      margin-top: 20px;\n      text-align: right;\n    }\n    .totals table {\n      margin-left: auto;\n      width: 300px;\n    }\n    .totals td {\n      padding: 8px 10px;\n    }\n    .totals .total-row {\n      font-size: 18px;\n      font-weight: bold;\n      color: #c9a227;\n      border-top: 2px solid #c9a227;\n    }\n    .footer {\n      margin-top: 40px;\n      padding-top: 20px;\n      border-top: 1px solid #eee;\n      text-align: center;\n      color: #999;\n      font-size: 12px;\n    }\n    .notes {\n      background: #f9f9f9;\n      padding: 15px;\n      border-radius: 5px;\n      color: #666;\n      font-style: italic;\n    }\n  </style>\n</head>\n<body>\n  <div class=\"invoice-container\">\n    <div class=\"header\">\n      <div class=\"logo\">\n        <h1>JOYERIA</h1>\n        <p>Sistema de Facturacion</p>\n      </div>\n      <div class=\"invoice-info\">\n        <h2>FACTURA</h2>\n        <p><strong>No.</strong> ${numeroFactura}</p>\n        <p><strong>Fecha:</strong> ${fechaEmision}</p>\n        ${fechaVencimiento ? '<p><strong>Vence:</strong> ' + fechaVencimiento + '</p>' : ''}\n      </div>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Cliente</div>\n      <div class=\"client-info\">\n        <p><strong>${clienteNombre}</strong></p>\n        ${clienteDireccion ? '<p>' + clienteDireccion + '</p>' : ''}\n        ${clienteCiudad ? '<p>' + clienteCiudad + '</p>' : ''}\n        ${clienteEmail ? '<p>Email: ' + clienteEmail + '</p>' : ''}\n        ${clienteTelefono ? '<p>Tel: ' + clienteTelefono + '</p>' : ''}\n        ${clienteCedula ? '<p>CC/NIT: ' + clienteCedula + '</p>' : ''}\n      </div>\n    </div>\n    \n    <div class=\"section\">\n      <div class=\"section-title\">Detalle</div>\n      <table class=\"items-table\">\n        <thead>\n          <tr>\n            <th width=\"5%\">#</th>\n            <th width=\"45%\">Descripcion</th>\n            <th width=\"10%\">Cant.</th>\n            <th width=\"20%\">Precio Unit.</th>\n            <th width=\"20%\">Total</th>\n          </tr>\n        </thead>\n        <tbody>\n          ${itemsRows}\n        </tbody>\n      </table>\n    </div>\n    \n    <div class=\"totals\">\n      <table>\n        <tr>\n          <td>Subtotal:</td>\n          <td>${formatCOP(subtotal)}</td>\n        </tr>\n        ${descuento > 0 ? '<tr><td>Descuento:</td><td>-' + formatCOP(descuento) + '</td></tr>' : ''}\n        <tr>\n          <td>IVA (19%):</td>\n          <td>${formatCOP(impuesto)}</td>\n        </tr>\n        <tr class=\"total-row\">\n          <td>TOTAL:</td>\n          <td>${formatCOP(total)}</td>\n        </tr>\n      </table>\n    </div>\n    \n    ${notas ? '<div class=\"section\"><div class=\"section-title\">Notas</div><div class=\"notes\">' + notas + '</div></div>' : ''}\n    \n    <div class=\"footer\">\n      <p>Vendedor: ${vendedorNombre} ${vendedorCedula ? '(' + vendedorCedula + ')' : ''}</p>\n      <p>Documento generado automaticamente - Jewelry Invoice Bot</p>\n    </div>\n  </div>\n</body>\n</html>\n`;\n\nreturn {\n  html: html,\n  numero_factura: numeroFactura,\n  organization_id: data.organization_id,\n  filename: `Factura_${numeroFactura}`\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [440, -60],
+      "position": [220, 0],
       "id": "generate-html",
       "name": "Generar HTML Factura"
     },
     {
       "parameters": {
-        "url": "https://api.html2pdf.app/v1/generate",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
+        "operation": "create",
+        "title": "={{ $json.filename }}",
+        "folderId": {
+          "__rl": true,
+          "value": "1rEsUrWhn2wczPrGu30CmmDjmpoaSGgYP",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "id": "create-google-doc",
+      "name": "Crear Google Doc",
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "GOOGLE_DOCS_CREDENTIAL_ID",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentURL": "={{ $json.documentId }}",
+        "actionsUi": {
+          "actionFields": [
             {
-              "name": "apiKey",
-              "value": "={{ $env.HTML2PDF_API_KEY }}"
+              "action": "insertText",
+              "insertText": {
+                "textToInsert": "={{ $('Generar HTML Factura').item.json.html }}",
+                "insertSegment": "body",
+                "locationChoice": "startOfBody"
+              }
             }
           ]
         },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"html\": {{ JSON.stringify($json.html) }},\n  \"format\": \"A4\",\n  \"margin\": \"10mm\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [660, 0],
+      "id": "insert-content",
+      "name": "Insertar Contenido",
+      "credentials": {
+        "googleDocsOAuth2Api": {
+          "id": "GOOGLE_DOCS_CREDENTIAL_ID",
+          "name": "Google Docs account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Crear Google Doc').item.json.documentId }}",
+          "mode": "id"
+        },
         "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file"
+          "googleFileConversion": {
+            "conversion": {
+              "docsToFormat": "application/pdf"
             }
           }
         }
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.3,
-      "position": [660, -60],
-      "id": "convert-to-pdf",
-      "name": "Convertir a PDF",
-      "disabled": true
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [880, 0],
+      "id": "export-pdf",
+      "name": "Exportar PDF",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive account"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// Alternativa: Generar PDF usando base64 del HTML\n// En produccion, usar un servicio como html2pdf.app, puppeteer, o wkhtmltopdf\n\nconst html = $input.first().json.html;\nconst facturaNumero = $input.first().json.factura_numero;\n\n// Por ahora, retornamos el HTML como base64 (el bot puede renderizarlo)\nconst htmlBase64 = Buffer.from(html).toString('base64');\n\nreturn {\n  success: true,\n  pdf_base64: htmlBase64,  // En produccion seria el PDF real\n  html: html,  // HTML para preview\n  filename: `factura_${facturaNumero || 'borrador'}.pdf`\n};"
+        "operation": "upload",
+        "name": "={{ $('Generar HTML Factura').item.json.filename }}.pdf",
+        "folderId": {
+          "__rl": true,
+          "value": "1rEsUrWhn2wczPrGu30CmmDjmpoaSGgYP",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1100, 0],
+      "id": "upload-pdf",
+      "name": "Guardar PDF en Drive",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "share",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "permissionsUi": {
+          "permissionsValues": {
+            "role": "reader",
+            "type": "anyone"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1320, 0],
+      "id": "share-pdf",
+      "name": "Compartir PDF",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Obtener datos de los nodos anteriores\nconst pdfFile = $('Guardar PDF en Drive').item.json;\nconst htmlData = $('Generar HTML Factura').item.json;\nconst pdfBinary = $('Exportar PDF').item.binary;\n\n// Construir URL pública del PDF\nconst pdfUrl = `https://drive.google.com/file/d/${pdfFile.id}/view`;\nconst pdfDownloadUrl = `https://drive.google.com/uc?export=download&id=${pdfFile.id}`;\n\n// Convertir PDF a base64 si existe\nlet pdfBase64 = null;\nif (pdfBinary && pdfBinary.data) {\n  pdfBase64 = pdfBinary.data.data;\n}\n\nreturn {\n  success: true,\n  pdf_url: pdfDownloadUrl,\n  pdf_view_url: pdfUrl,\n  pdf_file_id: pdfFile.id,\n  pdf_base64: pdfBase64,\n  html: htmlData.html,\n  filename: `${htmlData.filename}.pdf`,\n  numero_factura: htmlData.numero_factura\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 60],
+      "position": [1540, 0],
       "id": "prepare-response",
       "name": "Preparar Respuesta"
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ $json }}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [880, 0],
-      "id": "respond-pdf",
-      "name": "Responder con PDF"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "id": "check-enviar",
-              "leftValue": "={{ $json.body.tipo_evento }}",
-              "rightValue": "enviar_pdf",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
+        "operation": "delete",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Crear Google Doc').item.json.documentId }}",
+          "mode": "id"
         },
         "options": {}
       },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [440, 120],
-      "id": "is-enviar-pdf",
-      "name": "Es Enviar PDF?"
-    },
-    {
-      "parameters": {
-        "operation": "sendDocument",
-        "chatId": "={{ $('Webhook PDF').item.json.body.chat_id }}",
-        "binaryData": false,
-        "documentUrl": "={{ $('Webhook PDF').item.json.body.pdf_url }}",
-        "additionalFields": {
-          "caption": "={{ $('Webhook PDF').item.json.body.caption || 'Tu factura esta lista!' }}"
-        }
-      },
-      "type": "n8n-nodes-base.telegram",
-      "typeVersion": 1.2,
-      "position": [660, 180],
-      "id": "send-telegram-pdf",
-      "name": "Enviar PDF a Telegram",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1540, 150],
+      "id": "delete-temp-doc",
+      "name": "Eliminar Doc Temporal",
       "credentials": {
-        "telegramApi": {
-          "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
-          "name": "Telegram account"
+        "googleDriveOAuth2Api": {
+          "id": "GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive account"
         }
       }
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={ \"success\": true, \"message\": \"PDF enviado\" }",
+        "responseBody": "={{ JSON.stringify($('Preparar Respuesta').item.json) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [880, 180],
-      "id": "respond-sent",
-      "name": "Responder Enviado"
+      "position": [1760, 0],
+      "id": "respond-pdf",
+      "name": "Responder con PDF"
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={ \"success\": false, \"error\": \"Tipo de evento no reconocido\" }",
+        "responseBody": "={ \"success\": false, \"error\": \"Error generando PDF\" }",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [440, 300],
+      "position": [880, 200],
       "id": "respond-error",
       "name": "Responder Error"
     }
@@ -189,25 +219,7 @@
       "main": [
         [
           {
-            "node": "Es Generar PDF?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Es Generar PDF?": {
-      "main": [
-        [
-          {
             "node": "Generar HTML Factura",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Es Enviar PDF?",
             "type": "main",
             "index": 0
           }
@@ -218,7 +230,67 @@
       "main": [
         [
           {
+            "node": "Crear Google Doc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear Google Doc": {
+      "main": [
+        [
+          {
+            "node": "Insertar Contenido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insertar Contenido": {
+      "main": [
+        [
+          {
+            "node": "Exportar PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Exportar PDF": {
+      "main": [
+        [
+          {
+            "node": "Guardar PDF en Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar PDF en Drive": {
+      "main": [
+        [
+          {
+            "node": "Compartir PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compartir PDF": {
+      "main": [
+        [
+          {
             "node": "Preparar Respuesta",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Eliminar Doc Temporal",
             "type": "main",
             "index": 0
           }
@@ -235,46 +307,17 @@
           }
         ]
       ]
-    },
-    "Es Enviar PDF?": {
-      "main": [
-        [
-          {
-            "node": "Enviar PDF a Telegram",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Responder Error",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Enviar PDF a Telegram": {
-      "main": [
-        [
-          {
-            "node": "Responder Enviado",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "1.0.0",
+  "versionId": "2.0.0",
   "meta": {
     "templateCredsSetupCompleted": false,
     "instanceId": "jewelry-invoice-bot"
   },
   "id": "jewelry-pdf-workflow",
-  "tags": ["jewelry", "invoice", "pdf"]
+  "tags": ["jewelry", "invoice", "pdf", "google-drive"]
 }
