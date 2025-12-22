@@ -1,0 +1,1 @@
+"""Jewelry Invoice Bot - Sistema de facturación para joyerías"""

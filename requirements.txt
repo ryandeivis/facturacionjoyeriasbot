@@ -1,0 +1,19 @@
+# Bot de Telegram
+python-telegram-bot>=22.0
+
+# Base de datos
+sqlalchemy>=2.0.0
+
+# Validación
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# Seguridad
+passlib>=1.7.4
+bcrypt>=4.1.1
+
+# HTTP requests (para n8n)
+httpx>=0.25.0
+
+# Utilidades
+python-dotenv>=1.0.0
