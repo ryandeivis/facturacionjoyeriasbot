@@ -74,7 +74,7 @@ async def iniciar_nueva_factura(update: Update, context: ContextTypes.DEFAULT_TY
 
     await update.message.reply_text(
         "NUEVA FACTURA\n"
-        "=" * 25 + "\n\n"
+        "=========================\n\n"
         "¿Cómo deseas ingresar los items?\n\n"
         "- Texto: escribe los productos\n"
         "- Voz: dicta los productos\n"
@@ -236,7 +236,7 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
             mensaje = (
                 "ITEMS DETECTADOS\n"
-                "=" * 25 + "\n\n"
+                "=========================\n\n"
                 f"{items_text}"
                 f"SUBTOTAL: {format_currency(total)}\n\n"
             )
@@ -297,7 +297,7 @@ async def confirmar_datos(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if 'si' in opcion or 'continuar' in opcion:
         await update.message.reply_text(
             "DATOS DEL CLIENTE\n"
-            "=" * 25 + "\n\n"
+            "=========================\n\n"
             "Ingresa el nombre del cliente:",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -306,7 +306,7 @@ async def confirmar_datos(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if 'editar' in opcion or 'manual' in opcion:
         await update.message.reply_text(
             "EDITAR ITEMS\n"
-            "=" * 25 + "\n\n"
+            "=========================\n\n"
             "Ingresa los items en el formato:\n"
             "descripción - $precio\n\n"
             "Un item por línea.\n"
@@ -344,7 +344,7 @@ async def editar_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
         await update.message.reply_text(
             "DATOS DEL CLIENTE\n"
-            "=" * 25 + "\n\n"
+            "=========================\n\n"
             "Ingresa el nombre del cliente:",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -476,7 +476,7 @@ async def _mostrar_resumen_factura(update: Update, context: ContextTypes.DEFAULT
 
     mensaje = (
         "RESUMEN DE FACTURA\n"
-        "=" * 30 + "\n\n"
+        "==============================\n\n"
         "CLIENTE:\n"
         f"  Nombre: {context.user_data.get('cliente_nombre', 'N/A')}\n"
         f"  Direccion: {context.user_data.get('cliente_direccion', 'N/A')}\n"
@@ -572,7 +572,7 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
                     await update.message.reply_text(
                         "FACTURA GENERADA\n"
-                        "=" * 30 + "\n\n"
+                        "==============================\n\n"
                         f"No. Factura: {invoice.numero_factura}\n"
                         f"Cliente: {invoice.cliente_nombre}\n"
                         f"Subtotal: {format_currency(subtotal)}\n"
@@ -586,7 +586,7 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     # Factura guardada pero sin PDF
                     await update.message.reply_text(
                         "FACTURA GENERADA\n"
-                        "=" * 30 + "\n\n"
+                        "==============================\n\n"
                         f"No. Factura: {invoice.numero_factura}\n"
                         f"Cliente: {invoice.cliente_nombre}\n"
                         f"Total: {format_currency(total)}\n"

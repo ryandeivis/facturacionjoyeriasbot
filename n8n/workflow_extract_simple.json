@@ -1,0 +1,76 @@
+{
+  "name": "Jewelry Bot - Extract Items (Simple)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jewelry-extract",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "id": "webhook-extract",
+      "name": "Webhook Extract",
+      "webhookId": "jewelry-extract-simple"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Workflow simplificado sin OpenAI\n// Extrae items básicos del texto usando regex\n\nconst body = $input.first().json.body;\nconst inputType = body.type || 'text';\nconst content = body.content || '';\n\n// Función para extraer items del texto\nfunction extractItems(text) {\n  const items = [];\n  const lines = text.split(/[\\n,;]+/);\n  \n  for (const line of lines) {\n    const trimmed = line.trim();\n    if (!trimmed) continue;\n    \n    // Buscar patrones como \"producto 1000000\" o \"producto $1.000.000\"\n    const priceMatch = trimmed.match(/([\\$]?[\\d.,]+(?:\\.\\d{3})*)/g);\n    const cantidadMatch = trimmed.match(/(\\d+)\\s*(unidad|pcs?|x)/i);\n    \n    let precio = 0;\n    let cantidad = 1;\n    let nombre = trimmed;\n    \n    if (priceMatch && priceMatch.length > 0) {\n      // Tomar el último número como precio\n      const lastPrice = priceMatch[priceMatch.length - 1];\n      precio = parseFloat(lastPrice.replace(/[$.,]/g, '').replace(/\\./g, ''));\n      // Si el precio es muy pequeño, probablemente tiene puntos como separador\n      if (precio < 1000 && lastPrice.includes('.')) {\n        precio = parseFloat(lastPrice.replace(/\\./g, '').replace(',', '.'));\n      }\n    }\n    \n    if (cantidadMatch) {\n      cantidad = parseInt(cantidadMatch[1]) || 1;\n    }\n    \n    // Limpiar nombre (quitar números grandes que son precios)\n    nombre = trimmed.replace(/[\\$]?[\\d.,]{4,}/g, '').trim();\n    nombre = nombre.replace(/^[-,\\s]+|[-,\\s]+$/g, '');\n    \n    if (nombre && nombre.length > 2) {\n      items.push({\n        numero: items.length + 1,\n        nombre: nombre,\n        descripcion: '',\n        cantidad: cantidad,\n        precio: precio,\n        total: cantidad * precio\n      });\n    }\n  }\n  \n  return items.slice(0, 6); // Máximo 6 items\n}\n\nlet items = [];\nlet transcripcion = null;\n\nif (inputType === 'text') {\n  items = extractItems(content);\n} else if (inputType === 'voice') {\n  // Para audio, necesitamos transcripción (OpenAI)\n  // Por ahora retornamos error amigable\n  return {\n    success: false,\n    error: 'La transcripción de audio requiere OpenAI configurado. Por favor usa texto o foto.',\n    items: [],\n    input_type: inputType\n  };\n} else if (inputType === 'photo') {\n  // Para foto, necesitamos Vision AI (OpenAI)\n  // Por ahora retornamos error amigable\n  return {\n    success: false,\n    error: 'El análisis de imágenes requiere OpenAI configurado. Por favor usa texto.',\n    items: [],\n    input_type: inputType\n  };\n}\n\n// Calcular totales\nlet subtotal = 0;\nitems.forEach(item => {\n  subtotal += item.total;\n});\n\nconst descuento = 0;\nconst baseGravable = subtotal - descuento;\nconst impuesto = Math.round(baseGravable * 0.19); // 19% IVA Colombia\nconst total = baseGravable + impuesto;\n\nreturn {\n  success: items.length > 0,\n  items: items,\n  cliente: {\n    nombre: null,\n    direccion: null,\n    ciudad: null,\n    email: null,\n    telefono: null\n  },\n  totales: {\n    subtotal: subtotal,\n    descuento: descuento,\n    impuesto: impuesto,\n    total: total\n  },\n  input_type: inputType,\n  transcripcion: transcripcion,\n  notas: null,\n  confianza: items.length > 0 ? 0.7 : 0\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0],
+      "id": "process-input",
+      "name": "Procesar Input"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [440, 0],
+      "id": "respond-webhook",
+      "name": "Responder al Bot"
+    }
+  ],
+  "connections": {
+    "Webhook Extract": {
+      "main": [
+        [
+          {
+            "node": "Procesar Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Input": {
+      "main": [
+        [
+          {
+            "node": "Responder al Bot",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1.1.0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "jewelry-invoice-bot"
+  },
+  "id": "jewelry-extract-simple",
+  "tags": ["jewelry", "invoice", "extraction", "simple"]
+}

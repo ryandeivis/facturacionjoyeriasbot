@@ -252,6 +252,10 @@ MENSAJES = {
     'password_incorrecta': (
         "Contraseña incorrecta.\n\n"
         "Intenta nuevamente con /start"
+    ),
+    'error_general': (
+        "Ha ocurrido un error.\n\n"
+        "Por favor intenta de nuevo."
     )
 }
 

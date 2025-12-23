@@ -303,7 +303,22 @@ class N8NService:
                 )
 
                 if response.status_code == 200:
-                    return self._parse_extract_response(response.json())
+                    response_text = response.text
+                    if not response_text or response_text.strip() == '':
+                        logger.error("n8n retornó respuesta vacía - verificar credenciales OpenAI en n8n")
+                        return N8NResponse(
+                            success=False,
+                            error="n8n retornó respuesta vacía. Verificar que el workflow esté activo y OpenAI configurado."
+                        )
+                    try:
+                        data = response.json()
+                        return self._parse_extract_response(data)
+                    except Exception as json_err:
+                        logger.error(f"Error parseando JSON de n8n: {json_err}. Respuesta: {response_text[:200]}")
+                        return N8NResponse(
+                            success=False,
+                            error=f"Error parseando respuesta de n8n: {str(json_err)[:100]}"
+                        )
                 else:
                     logger.error(f"Error n8n HTTP {response.status_code}: {response.text}")
                     return N8NResponse(

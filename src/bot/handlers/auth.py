@@ -20,6 +20,7 @@ from src.database.queries.user_queries import get_user_by_cedula, update_last_lo
 from src.database.queries.invoice_queries import get_invoices_by_vendedor
 from src.bot.handlers.shared import (
     AuthStates,
+    InvoiceStates,
     get_menu_keyboard,
     limpiar_sesion,
     format_invoice_status,
@@ -34,6 +35,17 @@ logger = get_logger(__name__)
 CEDULA = AuthStates.CEDULA
 PASSWORD = AuthStates.PASSWORD
 MENU_PRINCIPAL = AuthStates.MENU_PRINCIPAL
+
+# Estados de facturación (para nested handler)
+SELECCIONAR_INPUT = InvoiceStates.SELECCIONAR_INPUT
+RECIBIR_INPUT = InvoiceStates.RECIBIR_INPUT
+CONFIRMAR_DATOS = InvoiceStates.CONFIRMAR_DATOS
+EDITAR_ITEMS = InvoiceStates.EDITAR_ITEMS
+DATOS_CLIENTE = InvoiceStates.DATOS_CLIENTE
+CLIENTE_DIRECCION = InvoiceStates.CLIENTE_DIRECCION
+CLIENTE_CIUDAD = InvoiceStates.CLIENTE_CIUDAD
+CLIENTE_EMAIL = InvoiceStates.CLIENTE_EMAIL
+GENERAR_FACTURA = InvoiceStates.GENERAR_FACTURA
 
 # Inicializar base de datos al importar
 try:
@@ -220,7 +232,7 @@ async def mostrar_mis_facturas(update: Update, context: ContextTypes.DEFAULT_TYP
             return
 
         mensaje = "MIS FACTURAS (últimas 10)\n"
-        mensaje += "=" * 30 + "\n\n"
+        mensaje += "==============================\n\n"
 
         for f in facturas:
             estado_formatted = format_invoice_status(f.estado)
@@ -251,13 +263,61 @@ async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 def get_auth_conversation_handler() -> ConversationHandler:
-    """Retorna el ConversationHandler de autenticación"""
+    """Retorna el ConversationHandler de autenticación con flujo de facturación integrado"""
+    from src.bot.handlers.invoice import (
+        seleccionar_tipo_input,
+        recibir_input,
+        confirmar_datos,
+        editar_items,
+        datos_cliente,
+        cliente_direccion,
+        cliente_ciudad,
+        cliente_email,
+        generar_factura,
+        cancelar_factura
+    )
+
     return ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
+            # Estados de autenticación
             CEDULA: [MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_cedula)],
             PASSWORD: [MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_password)],
-            MENU_PRINCIPAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_principal)]
+            MENU_PRINCIPAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_principal)],
+
+            # Estados de facturación
+            SELECCIONAR_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, seleccionar_tipo_input)
+            ],
+            RECIBIR_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, recibir_input),
+                MessageHandler(filters.VOICE, recibir_input),
+                MessageHandler(filters.PHOTO, recibir_input)
+            ],
+            CONFIRMAR_DATOS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar_datos)
+            ],
+            EDITAR_ITEMS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, editar_items)
+            ],
+            DATOS_CLIENTE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, datos_cliente)
+            ],
+            CLIENTE_DIRECCION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_direccion)
+            ],
+            CLIENTE_CIUDAD: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_ciudad)
+            ],
+            CLIENTE_EMAIL: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_email)
+            ],
+            GENERAR_FACTURA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, generar_factura)
+            ]
         },
-        fallbacks=[CommandHandler('cancel', cancelar)]
+        fallbacks=[
+            CommandHandler('cancel', cancelar),
+            MessageHandler(filters.Regex(r'^Cancelar$'), cancelar_factura)
+        ]
     )
