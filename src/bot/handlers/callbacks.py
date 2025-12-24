@@ -83,7 +83,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # ============================================================================
 
 async def _confirm_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Usuario confirmó los datos, proceder a datos del cliente."""
+    """Usuario confirmó los datos, proceder a generar factura o pedir datos faltantes."""
+    from src.bot.handlers.shared import get_generate_keyboard
+
     query = update.callback_query
 
     # Pre-llenar datos del cliente si fueron detectados
@@ -101,24 +103,48 @@ async def _confirm_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         if cliente_detectado.get('email'):
             context.user_data['cliente_email'] = cliente_detectado.get('email')
 
-    # Mostrar nombre detectado o pedir nuevo
-    nombre_detectado = context.user_data.get('cliente_nombre', '')
+    # Verificar si tenemos al menos nombre del cliente (dato mínimo requerido)
+    nombre_cliente = context.user_data.get('cliente_nombre', '')
 
-    if nombre_detectado:
-        await query.edit_message_text(
-            "DATOS DEL CLIENTE\n"
-            "=========================\n\n"
-            f"Nombre detectado: {nombre_detectado}\n\n"
-            "Confirma el nombre o escribe uno diferente:"
+    if nombre_cliente:
+        # Ya tenemos nombre, ir directo a generar factura
+        items = context.user_data.get('items', [])
+        total = context.user_data.get('total', 0)
+
+        resumen = "RESUMEN DE FACTURA\n"
+        resumen += "=========================\n\n"
+        resumen += f"Cliente: {nombre_cliente}\n"
+        if context.user_data.get('cliente_telefono'):
+            resumen += f"Teléfono: {context.user_data.get('cliente_telefono')}\n"
+        if context.user_data.get('cliente_direccion'):
+            resumen += f"Dirección: {context.user_data.get('cliente_direccion')}\n"
+        if context.user_data.get('cliente_ciudad'):
+            resumen += f"Ciudad: {context.user_data.get('cliente_ciudad')}\n"
+        if context.user_data.get('cliente_email'):
+            resumen += f"Email: {context.user_data.get('cliente_email')}\n"
+
+        resumen += f"\nItems: {len(items)}\n"
+        resumen += f"Total: {format_currency(total)}\n\n"
+        resumen += "¿Generar factura?"
+
+        await query.edit_message_text(resumen)
+
+        # Enviar nuevo mensaje con teclado
+        await query.message.reply_text(
+            "Presiona CONFIRMAR para generar la factura:",
+            reply_markup=get_generate_keyboard()
         )
+
+        return InvoiceStates.GENERAR_FACTURA
     else:
+        # No tenemos nombre, pedir datos del cliente
         await query.edit_message_text(
             "DATOS DEL CLIENTE\n"
             "=========================\n\n"
             "Ingresa el nombre del cliente:"
         )
 
-    return InvoiceStates.DATOS_CLIENTE
+        return InvoiceStates.DATOS_CLIENTE
 
 
 async def _confirm_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -346,9 +372,8 @@ async def _start_cliente_field_edit(
 
     await query.edit_message_text(prompts.get(field, "Escribe el nuevo valor:"))
 
-    # Por ahora todos los campos de cliente van al mismo estado
-    # Se puede expandir con estados específicos si se necesita validación
-    return InvoiceStates.CONFIRMAR_DATOS
+    # Retornar estado dedicado para recibir texto de edición de cliente
+    return InvoiceStates.EDITAR_CLIENTE_CAMPO
 
 
 # ============================================================================

@@ -27,7 +27,7 @@
           "conditions": [
             {
               "id": "check-voice",
-              "leftValue": "={{ $json.body.type }}",
+              "leftValue": "={{ $json.type }}",
               "rightValue": "voice",
               "operator": {
                 "type": "string",
@@ -57,7 +57,7 @@
           "conditions": [
             {
               "id": "check-photo",
-              "leftValue": "={{ $json.body.type }}",
+              "leftValue": "={{ $json.type }}",
               "rightValue": "photo",
               "operator": {
                 "type": "string",
@@ -97,6 +97,16 @@
     },
     {
       "parameters": {
+        "jsCode": "// Convertir base64 a binario para OpenAI Vision\nconst base64Content = $('Webhook Extract').item.json.content;\n\nreturn {\n  json: {\n    type: $json.type,\n    vendedor_cedula: $('Webhook Extract').item.json.vendedor_cedula\n  },\n  binary: {\n    data: {\n      data: base64Content,\n      mimeType: 'image/jpeg',\n      fileName: 'photo.jpg'\n    }\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [550, 0],
+      "id": "base64-to-binary",
+      "name": "Base64 a Binario"
+    },
+    {
+      "parameters": {
         "resource": "image",
         "operation": "analyze",
         "modelId": {
@@ -107,11 +117,12 @@
         },
         "text": "Extrae TODO el texto visible de esta imagen de productos de joyeria. Si hay datos estructurados como nombres de productos, cantidades y precios, organizalos claramente. Responde en español.",
         "inputType": "base64",
+        "binaryPropertyName": "data",
         "options": {}
       },
       "type": "@n8n/n8n-nodes-langchain.openAi",
       "typeVersion": 2.1,
-      "position": [660, 0],
+      "position": [760, 0],
       "id": "analyze-image",
       "name": "Analizar Imagen",
       "credentials": {
@@ -186,7 +197,7 @@
             {
               "id": "set-text-direct",
               "name": "input_text",
-              "value": "={{ $('Webhook Extract').item.json.body.content }}",
+              "value": "={{ $('Webhook Extract').item.json.content }}",
               "type": "string"
             },
             {
@@ -301,7 +312,7 @@
       "main": [
         [
           {
-            "node": "Analizar Imagen",
+            "node": "Base64 a Binario",
             "type": "main",
             "index": 0
           }
@@ -309,6 +320,17 @@
         [
           {
             "node": "Preparar Texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Base64 a Binario": {
+      "main": [
+        [
+          {
+            "node": "Analizar Imagen",
             "type": "main",
             "index": 0
           }
@@ -408,7 +430,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "1.0.0",
+  "versionId": "1.1.0",
   "meta": {
     "templateCredsSetupCompleted": false,
     "instanceId": "jewelry-invoice-bot"

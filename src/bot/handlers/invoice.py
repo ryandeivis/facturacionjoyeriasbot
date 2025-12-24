@@ -40,6 +40,7 @@ from src.bot.handlers.shared import (
     limpiar_datos_factura,
     is_authenticated,
     format_currency,
+    format_title_case,
     MENSAJES,
     GUIA_INPUT_BASE,
     GUIA_TEXTO,
@@ -227,27 +228,46 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
         # Procesar respuesta de n8n
         if response and response.success and response.items:
+            # Formatear items con Title Case
+            formatted_items = []
+            for item in response.items:
+                formatted_item = item.copy()
+                if formatted_item.get('nombre'):
+                    formatted_item['nombre'] = format_title_case(formatted_item['nombre'])
+                if formatted_item.get('descripcion'):
+                    formatted_item['descripcion'] = format_title_case(formatted_item['descripcion'])
+                formatted_items.append(formatted_item)
+
+            # Formatear cliente con Title Case
+            formatted_cliente = None
+            if response.cliente:
+                formatted_cliente = response.cliente.copy()
+                if formatted_cliente.get('nombre'):
+                    formatted_cliente['nombre'] = format_title_case(formatted_cliente['nombre'])
+                if formatted_cliente.get('ciudad'):
+                    formatted_cliente['ciudad'] = format_title_case(formatted_cliente['ciudad'])
+
             # Guardar respuesta completa para no perder datos
             context.user_data['n8n_response'] = {
-                'items': response.items,
-                'cliente': response.cliente,
+                'items': formatted_items,
+                'cliente': formatted_cliente,
                 'vendedor': getattr(response, 'vendedor', None),
                 'factura': response.factura,
                 'totales': response.totales,
                 'transcripcion': response.transcripcion,
                 'input_type': response.input_type
             }
-            context.user_data['items'] = response.items
+            context.user_data['items'] = formatted_items
             context.user_data['transcripcion'] = response.transcripcion
 
             # Guardar cliente detectado si existe
-            if response.cliente:
-                context.user_data['cliente_detectado'] = response.cliente
+            if formatted_cliente:
+                context.user_data['cliente_detectado'] = formatted_cliente
 
             # Mostrar items extraídos
             items_text = ""
             total = 0
-            for i, item in enumerate(response.items, 1):
+            for i, item in enumerate(formatted_items, 1):
                 precio = item.get('precio', 0)
                 cantidad = item.get('cantidad', 1)
                 subtotal = precio * cantidad

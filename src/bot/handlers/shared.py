@@ -44,6 +44,8 @@ class InvoiceStates:
     AGREGAR_ITEM = 116
     AGREGAR_ITEM_CANTIDAD = 117
     AGREGAR_ITEM_PRECIO = 118
+    # Estado para edición de cliente (desde pantalla confirmación)
+    EDITAR_CLIENTE_CAMPO = 119
 
 
 # ============================================================================
@@ -290,6 +292,25 @@ def format_currency(amount: float) -> str:
         String formateado como moneda
     """
     return f"${amount:,.0f}"
+
+
+def format_title_case(text: str) -> str:
+    """
+    Formatea texto a Title Case (primera letra mayúscula de cada palabra).
+
+    Maneja casos especiales como "AreTes" -> "Aretes", "CADENA" -> "Cadena".
+
+    Args:
+        text: Texto a formatear
+
+    Returns:
+        Texto formateado en Title Case
+    """
+    if not text:
+        return text
+
+    # Convertir a minúsculas y luego capitalizar cada palabra
+    return text.lower().title()
 
 
 def format_invoice_status(estado: str) -> str:

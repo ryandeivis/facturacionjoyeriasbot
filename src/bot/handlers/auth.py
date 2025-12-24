@@ -56,6 +56,7 @@ EDITAR_ITEM_PRECIO = InvoiceStates.EDITAR_ITEM_PRECIO
 AGREGAR_ITEM = InvoiceStates.AGREGAR_ITEM
 AGREGAR_ITEM_CANTIDAD = InvoiceStates.AGREGAR_ITEM_CANTIDAD
 AGREGAR_ITEM_PRECIO = InvoiceStates.AGREGAR_ITEM_PRECIO
+EDITAR_CLIENTE_CAMPO = InvoiceStates.EDITAR_CLIENTE_CAMPO
 
 # Inicializar base de datos al importar
 try:
@@ -359,6 +360,10 @@ def get_auth_conversation_handler() -> ConversationHandler:
             ],
             AGREGAR_ITEM_PRECIO: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_item_precio)
+            ],
+            # Estado para edición de campos del cliente
+            EDITAR_CLIENTE_CAMPO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, editar_cliente_campo)
             ]
         },
         fallbacks=[
