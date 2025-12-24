@@ -29,6 +29,7 @@ from src.utils.logger import get_logger
 from src.database.connection import get_db
 from src.database.queries.invoice_queries import create_invoice
 from src.services.n8n_service import n8n_service
+from src.services.text_parser import text_parser
 from src.bot.handlers.shared import (
     AuthStates,
     InvoiceStates,
@@ -161,7 +162,7 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         response = None
 
         if input_type == InputType.TEXTO.value:
-            # Texto directo
+            # Texto directo - usar parser local (no n8n)
             text = update.message.text
             if not text:
                 await processing_msg.edit_text(
@@ -171,7 +172,9 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 return RECIBIR_INPUT
 
             context.user_data['input_raw'] = text
-            response = await n8n_service.send_text_input(text, cedula)
+            # Usar parser local para texto (más rápido y sin costo)
+            response = text_parser.parse(text)
+            logger.info(f"Texto parseado localmente: {response.success}, {len(response.items)} items")
 
         elif input_type == InputType.VOZ.value:
             # Descargar audio
