@@ -5,7 +5,7 @@ Código compartido entre handlers para evitar dependencias circulares.
 Incluye teclados, estados de conversación y utilidades comunes.
 """
 
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ConversationHandler
 from config.constants import UserRole
 
@@ -31,10 +31,19 @@ class InvoiceStates:
     CLIENTE_TELEFONO = 105
     CLIENTE_CEDULA = 106
     GENERAR_FACTURA = 107
-    # Nuevos estados para datos completos del cliente
+    # Estados para datos completos del cliente
     CLIENTE_DIRECCION = 108
     CLIENTE_CIUDAD = 109
     CLIENTE_EMAIL = 110
+    # Estados para edición granular de items
+    EDITAR_SELECCIONAR_ITEM = 111
+    EDITAR_ITEM_CAMPO = 112
+    EDITAR_ITEM_NOMBRE = 113
+    EDITAR_ITEM_CANTIDAD = 114
+    EDITAR_ITEM_PRECIO = 115
+    AGREGAR_ITEM = 116
+    AGREGAR_ITEM_CANTIDAD = 117
+    AGREGAR_ITEM_PRECIO = 118
 
 
 # ============================================================================
@@ -118,6 +127,92 @@ def get_generate_keyboard() -> ReplyKeyboardMarkup:
 
 
 # ============================================================================
+# TECLADOS INLINE PARA EDICIÓN GRANULAR
+# ============================================================================
+
+def get_confirm_inline_keyboard(has_cliente: bool = False) -> InlineKeyboardMarkup:
+    """
+    Teclado de confirmación con opciones de edición granular.
+
+    Args:
+        has_cliente: True si se detectó información del cliente
+
+    Returns:
+        InlineKeyboardMarkup con botones de confirmación y edición
+    """
+    keyboard = [
+        [InlineKeyboardButton("Sí, continuar", callback_data="confirm_yes")],
+        [InlineKeyboardButton("Editar Items", callback_data="edit_items_menu")],
+    ]
+    if has_cliente:
+        keyboard.append([InlineKeyboardButton("Editar Cliente", callback_data="edit_cliente")])
+    keyboard.append([InlineKeyboardButton("Cancelar", callback_data="confirm_cancel")])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_items_edit_keyboard(items: list) -> InlineKeyboardMarkup:
+    """
+    Teclado con lista de items para editar individualmente.
+
+    Args:
+        items: Lista de items a mostrar
+
+    Returns:
+        InlineKeyboardMarkup con botones para cada item
+    """
+    keyboard = []
+    for i, item in enumerate(items):
+        nombre = item.get('nombre', item.get('descripcion', f'Item {i+1}'))[:20]
+        precio = item.get('precio', 0)
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{i+1}. {nombre} - ${precio:,.0f}",
+                callback_data=f"edit_item_{i}"
+            ),
+            InlineKeyboardButton("X", callback_data=f"delete_item_{i}")
+        ])
+    if len(items) < 6:
+        keyboard.append([InlineKeyboardButton("+ Agregar Item", callback_data="add_item")])
+    keyboard.append([InlineKeyboardButton("Volver", callback_data="back_to_confirm")])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_item_field_keyboard(item_index: int) -> InlineKeyboardMarkup:
+    """
+    Teclado para seleccionar qué campo del item editar.
+
+    Args:
+        item_index: Índice del item a editar
+
+    Returns:
+        InlineKeyboardMarkup con opciones de campo
+    """
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Editar Nombre", callback_data=f"field_{item_index}_nombre")],
+        [InlineKeyboardButton("Editar Cantidad", callback_data=f"field_{item_index}_cantidad")],
+        [InlineKeyboardButton("Editar Precio", callback_data=f"field_{item_index}_precio")],
+        [InlineKeyboardButton("Volver", callback_data="edit_items_menu")]
+    ])
+
+
+def get_cliente_edit_keyboard() -> InlineKeyboardMarkup:
+    """
+    Teclado para editar campos del cliente detectado.
+
+    Returns:
+        InlineKeyboardMarkup con campos del cliente
+    """
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Nombre", callback_data="edit_cliente_nombre")],
+        [InlineKeyboardButton("Teléfono", callback_data="edit_cliente_telefono")],
+        [InlineKeyboardButton("Dirección", callback_data="edit_cliente_direccion")],
+        [InlineKeyboardButton("Ciudad", callback_data="edit_cliente_ciudad")],
+        [InlineKeyboardButton("Email", callback_data="edit_cliente_email")],
+        [InlineKeyboardButton("Volver", callback_data="back_to_confirm")]
+    ])
+
+
+# ============================================================================
 # UTILIDADES COMPARTIDAS
 # ============================================================================
 
@@ -132,7 +227,10 @@ def limpiar_datos_factura(context) -> None:
         'items', 'cliente_nombre', 'cliente_telefono', 'cliente_cedula',
         'cliente_direccion', 'cliente_ciudad', 'cliente_email',
         'subtotal', 'total', 'input_type', 'input_raw', 'transcripcion',
-        'manual_mode'
+        'manual_mode',
+        # Nuevas keys para edición granular
+        'n8n_response', 'cliente_detectado', 'editing_item_index',
+        'editing_field', 'new_item'
     ]
     for key in keys_to_remove:
         context.user_data.pop(key, None)

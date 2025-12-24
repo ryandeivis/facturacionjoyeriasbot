@@ -8,6 +8,7 @@ from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     ConversationHandler,
     ContextTypes,
     filters
@@ -46,6 +47,15 @@ CLIENTE_DIRECCION = InvoiceStates.CLIENTE_DIRECCION
 CLIENTE_CIUDAD = InvoiceStates.CLIENTE_CIUDAD
 CLIENTE_EMAIL = InvoiceStates.CLIENTE_EMAIL
 GENERAR_FACTURA = InvoiceStates.GENERAR_FACTURA
+# Estados para edición granular
+EDITAR_SELECCIONAR_ITEM = InvoiceStates.EDITAR_SELECCIONAR_ITEM
+EDITAR_ITEM_CAMPO = InvoiceStates.EDITAR_ITEM_CAMPO
+EDITAR_ITEM_NOMBRE = InvoiceStates.EDITAR_ITEM_NOMBRE
+EDITAR_ITEM_CANTIDAD = InvoiceStates.EDITAR_ITEM_CANTIDAD
+EDITAR_ITEM_PRECIO = InvoiceStates.EDITAR_ITEM_PRECIO
+AGREGAR_ITEM = InvoiceStates.AGREGAR_ITEM
+AGREGAR_ITEM_CANTIDAD = InvoiceStates.AGREGAR_ITEM_CANTIDAD
+AGREGAR_ITEM_PRECIO = InvoiceStates.AGREGAR_ITEM_PRECIO
 
 # Inicializar base de datos al importar
 try:
@@ -274,8 +284,17 @@ def get_auth_conversation_handler() -> ConversationHandler:
         cliente_ciudad,
         cliente_email,
         generar_factura,
-        cancelar_factura
+        cancelar_factura,
+        # Handlers de edición granular
+        editar_item_nombre,
+        editar_item_cantidad,
+        editar_item_precio,
+        agregar_item_nombre,
+        agregar_item_cantidad,
+        agregar_item_precio,
+        editar_cliente_campo
     )
+    from src.bot.handlers.callbacks import handle_callback
 
     return ConversationHandler(
         entry_points=[CommandHandler('start', start)],
@@ -295,6 +314,7 @@ def get_auth_conversation_handler() -> ConversationHandler:
                 MessageHandler(filters.PHOTO, recibir_input)
             ],
             CONFIRMAR_DATOS: [
+                CallbackQueryHandler(handle_callback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, confirmar_datos)
             ],
             EDITAR_ITEMS: [
@@ -314,6 +334,31 @@ def get_auth_conversation_handler() -> ConversationHandler:
             ],
             GENERAR_FACTURA: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, generar_factura)
+            ],
+            # Estados de edición granular de items
+            EDITAR_SELECCIONAR_ITEM: [
+                CallbackQueryHandler(handle_callback)
+            ],
+            EDITAR_ITEM_CAMPO: [
+                CallbackQueryHandler(handle_callback)
+            ],
+            EDITAR_ITEM_NOMBRE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, editar_item_nombre)
+            ],
+            EDITAR_ITEM_CANTIDAD: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, editar_item_cantidad)
+            ],
+            EDITAR_ITEM_PRECIO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, editar_item_precio)
+            ],
+            AGREGAR_ITEM: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_item_nombre)
+            ],
+            AGREGAR_ITEM_CANTIDAD: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_item_cantidad)
+            ],
+            AGREGAR_ITEM_PRECIO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_item_precio)
             ]
         },
         fallbacks=[

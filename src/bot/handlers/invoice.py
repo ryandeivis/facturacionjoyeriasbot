@@ -35,6 +35,7 @@ from src.bot.handlers.shared import (
     get_menu_keyboard,
     get_input_type_keyboard,
     get_confirm_keyboard,
+    get_confirm_inline_keyboard,
     get_generate_keyboard,
     limpiar_datos_factura,
     is_authenticated,
@@ -63,6 +64,15 @@ GENERAR_FACTURA = InvoiceStates.GENERAR_FACTURA
 CLIENTE_DIRECCION = InvoiceStates.CLIENTE_DIRECCION
 CLIENTE_CIUDAD = InvoiceStates.CLIENTE_CIUDAD
 CLIENTE_EMAIL = InvoiceStates.CLIENTE_EMAIL
+# Estados para edición granular
+EDITAR_SELECCIONAR_ITEM = InvoiceStates.EDITAR_SELECCIONAR_ITEM
+EDITAR_ITEM_CAMPO = InvoiceStates.EDITAR_ITEM_CAMPO
+EDITAR_ITEM_NOMBRE = InvoiceStates.EDITAR_ITEM_NOMBRE
+EDITAR_ITEM_CANTIDAD = InvoiceStates.EDITAR_ITEM_CANTIDAD
+EDITAR_ITEM_PRECIO = InvoiceStates.EDITAR_ITEM_PRECIO
+AGREGAR_ITEM = InvoiceStates.AGREGAR_ITEM
+AGREGAR_ITEM_CANTIDAD = InvoiceStates.AGREGAR_ITEM_CANTIDAD
+AGREGAR_ITEM_PRECIO = InvoiceStates.AGREGAR_ITEM_PRECIO
 
 
 async def iniciar_nueva_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -217,8 +227,22 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
         # Procesar respuesta de n8n
         if response and response.success and response.items:
+            # Guardar respuesta completa para no perder datos
+            context.user_data['n8n_response'] = {
+                'items': response.items,
+                'cliente': response.cliente,
+                'vendedor': getattr(response, 'vendedor', None),
+                'factura': response.factura,
+                'totales': response.totales,
+                'transcripcion': response.transcripcion,
+                'input_type': response.input_type
+            }
             context.user_data['items'] = response.items
             context.user_data['transcripcion'] = response.transcripcion
+
+            # Guardar cliente detectado si existe
+            if response.cliente:
+                context.user_data['cliente_detectado'] = response.cliente
 
             # Mostrar items extraídos
             items_text = ""
@@ -228,7 +252,14 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 cantidad = item.get('cantidad', 1)
                 subtotal = precio * cantidad
                 total += subtotal
-                items_text += f"{i}. {item.get('descripcion', 'Sin descripción')}\n"
+
+                # Fix: usar 'nombre' primero, luego 'descripcion' como fallback
+                nombre = item.get('nombre', 'Producto')
+                descripcion = item.get('descripcion', '')
+
+                items_text += f"{i}. {nombre}\n"
+                if descripcion:
+                    items_text += f"   {descripcion}\n"
                 items_text += f"   Cantidad: {cantidad} x {format_currency(precio)} = {format_currency(subtotal)}\n\n"
 
             context.user_data['subtotal'] = total
@@ -238,18 +269,43 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 "ITEMS DETECTADOS\n"
                 "=========================\n\n"
                 f"{items_text}"
-                f"SUBTOTAL: {format_currency(total)}\n\n"
+                f"SUBTOTAL: {format_currency(total)}\n"
             )
 
-            if response.transcripcion:
-                mensaje += f"Transcripción: {response.transcripcion[:100]}...\n\n"
+            # Mostrar cliente detectado si existe
+            if response.cliente:
+                cliente = response.cliente
+                has_cliente_data = any([
+                    cliente.get('nombre'),
+                    cliente.get('telefono'),
+                    cliente.get('direccion')
+                ])
+                if has_cliente_data:
+                    mensaje += "\nCLIENTE DETECTADO\n"
+                    mensaje += "-------------------------\n"
+                    if cliente.get('nombre'):
+                        mensaje += f"Nombre: {cliente.get('nombre')}\n"
+                    if cliente.get('telefono'):
+                        mensaje += f"Teléfono: {cliente.get('telefono')}\n"
+                    if cliente.get('direccion'):
+                        mensaje += f"Dirección: {cliente.get('direccion')}\n"
+                    if cliente.get('ciudad'):
+                        mensaje += f"Ciudad: {cliente.get('ciudad')}\n"
+                    if cliente.get('email'):
+                        mensaje += f"Email: {cliente.get('email')}\n"
 
-            mensaje += "¿Los datos son correctos?"
+            if response.transcripcion:
+                mensaje += f"\nTranscripción: {response.transcripcion[:100]}...\n"
+
+            mensaje += "\nSelecciona una opción:"
 
             await processing_msg.edit_text(mensaje)
+
+            # Usar InlineKeyboard para edición granular
+            has_cliente = bool(response.cliente and response.cliente.get('nombre'))
             await update.message.reply_text(
                 "Confirma los datos:",
-                reply_markup=get_confirm_keyboard()
+                reply_markup=get_confirm_inline_keyboard(has_cliente)
             )
 
             return CONFIRMAR_DATOS
@@ -796,6 +852,255 @@ async def cancelar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         reply_markup=get_menu_keyboard(rol)
     )
     return AuthStates.MENU_PRINCIPAL
+
+
+# ============================================================================
+# HANDLERS DE EDICIÓN GRANULAR DE ITEMS
+# ============================================================================
+
+async def editar_item_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe nuevo nombre del item."""
+    from src.bot.handlers.shared import get_items_edit_keyboard
+
+    nuevo_nombre = update.message.text.strip()
+    idx = context.user_data.get('editing_item_index', 0)
+    items = context.user_data.get('items', [])
+
+    if idx < len(items):
+        items[idx]['nombre'] = nuevo_nombre
+        context.user_data['items'] = items
+
+    # Volver al menú de items
+    return await _volver_menu_items(update, context)
+
+
+async def editar_item_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe nueva cantidad del item."""
+    try:
+        cantidad = int(update.message.text.strip())
+        if cantidad < 1:
+            raise ValueError()
+    except ValueError:
+        await update.message.reply_text(
+            "Cantidad inválida.\n"
+            "Escribe un número mayor a 0:"
+        )
+        return EDITAR_ITEM_CANTIDAD
+
+    idx = context.user_data.get('editing_item_index', 0)
+    items = context.user_data.get('items', [])
+
+    if idx < len(items):
+        items[idx]['cantidad'] = cantidad
+        context.user_data['items'] = items
+        _recalcular_totales(context)
+
+    return await _volver_menu_items(update, context)
+
+
+async def editar_item_precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe nuevo precio del item."""
+    try:
+        precio_str = update.message.text.strip()
+        precio_str = precio_str.replace('$', '').replace(',', '').replace('.', '')
+        precio = float(precio_str)
+        if precio < 0:
+            raise ValueError()
+    except ValueError:
+        await update.message.reply_text(
+            "Precio inválido.\n"
+            "Escribe solo números:"
+        )
+        return EDITAR_ITEM_PRECIO
+
+    idx = context.user_data.get('editing_item_index', 0)
+    items = context.user_data.get('items', [])
+
+    if idx < len(items):
+        items[idx]['precio'] = precio
+        context.user_data['items'] = items
+        _recalcular_totales(context)
+
+    return await _volver_menu_items(update, context)
+
+
+async def agregar_item_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe nombre del nuevo item."""
+    nombre = update.message.text.strip()
+
+    if len(nombre) < 2:
+        await update.message.reply_text(
+            "El nombre debe tener al menos 2 caracteres.\n"
+            "Escribe el nombre del producto:"
+        )
+        return AGREGAR_ITEM
+
+    context.user_data['new_item'] = {'nombre': nombre}
+
+    await update.message.reply_text(
+        f"Producto: {nombre}\n\n"
+        "Escribe la cantidad:"
+    )
+    return AGREGAR_ITEM_CANTIDAD
+
+
+async def agregar_item_cantidad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe cantidad del nuevo item."""
+    try:
+        cantidad = int(update.message.text.strip())
+        if cantidad < 1:
+            raise ValueError()
+    except ValueError:
+        await update.message.reply_text(
+            "Cantidad inválida.\n"
+            "Escribe un número mayor a 0:"
+        )
+        return AGREGAR_ITEM_CANTIDAD
+
+    new_item = context.user_data.get('new_item', {})
+    new_item['cantidad'] = cantidad
+    context.user_data['new_item'] = new_item
+
+    await update.message.reply_text(
+        f"Producto: {new_item.get('nombre')}\n"
+        f"Cantidad: {cantidad}\n\n"
+        "Escribe el precio unitario (solo números):"
+    )
+    return AGREGAR_ITEM_PRECIO
+
+
+async def agregar_item_precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe precio del nuevo item y lo agrega a la lista."""
+    try:
+        precio_str = update.message.text.strip()
+        precio_str = precio_str.replace('$', '').replace(',', '').replace('.', '')
+        precio = float(precio_str)
+        if precio < 0:
+            raise ValueError()
+    except ValueError:
+        await update.message.reply_text(
+            "Precio inválido.\n"
+            "Escribe solo números:"
+        )
+        return AGREGAR_ITEM_PRECIO
+
+    new_item = context.user_data.get('new_item', {})
+    new_item['precio'] = precio
+
+    # Agregar a lista de items
+    items = context.user_data.get('items', [])
+    items.append(new_item)
+    context.user_data['items'] = items
+
+    # Limpiar item temporal
+    context.user_data.pop('new_item', None)
+    context.user_data.pop('adding_new_item', None)
+
+    _recalcular_totales(context)
+
+    await update.message.reply_text(
+        f"Item agregado: {new_item.get('nombre')}\n"
+        f"Cantidad: {new_item.get('cantidad')} x {format_currency(precio)}"
+    )
+
+    return await _volver_menu_items(update, context)
+
+
+async def editar_cliente_campo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe nuevo valor para campo del cliente."""
+    from src.bot.handlers.shared import get_confirm_inline_keyboard
+
+    nuevo_valor = update.message.text.strip()
+    field = context.user_data.get('editing_cliente_field')
+    cliente = context.user_data.get('cliente_detectado', {})
+
+    if field and nuevo_valor:
+        cliente[field] = nuevo_valor
+        context.user_data['cliente_detectado'] = cliente
+
+    # Volver a pantalla de confirmación
+    items = context.user_data.get('items', [])
+    total = context.user_data.get('total', 0)
+
+    items_text = ""
+    for i, item in enumerate(items, 1):
+        nombre = item.get('nombre', item.get('descripcion', 'Producto'))
+        cantidad = item.get('cantidad', 1)
+        precio = item.get('precio', 0)
+        subtotal = cantidad * precio
+
+        items_text += f"{i}. {nombre}\n"
+        items_text += f"   Cantidad: {cantidad} x {format_currency(precio)} = {format_currency(subtotal)}\n\n"
+
+    mensaje = (
+        "ITEMS DETECTADOS\n"
+        "=========================\n\n"
+        f"{items_text}"
+        f"SUBTOTAL: {format_currency(total)}\n"
+    )
+
+    if cliente and any([cliente.get('nombre'), cliente.get('telefono')]):
+        mensaje += "\nCLIENTE DETECTADO\n"
+        mensaje += "-------------------------\n"
+        if cliente.get('nombre'):
+            mensaje += f"Nombre: {cliente.get('nombre')}\n"
+        if cliente.get('telefono'):
+            mensaje += f"Teléfono: {cliente.get('telefono')}\n"
+        if cliente.get('direccion'):
+            mensaje += f"Dirección: {cliente.get('direccion')}\n"
+        if cliente.get('ciudad'):
+            mensaje += f"Ciudad: {cliente.get('ciudad')}\n"
+        if cliente.get('email'):
+            mensaje += f"Email: {cliente.get('email')}\n"
+
+    mensaje += "\nSelecciona una opción:"
+
+    has_cliente = bool(cliente and cliente.get('nombre'))
+
+    await update.message.reply_text(mensaje)
+    await update.message.reply_text(
+        "Confirma los datos:",
+        reply_markup=get_confirm_inline_keyboard(has_cliente)
+    )
+
+    context.user_data.pop('editing_cliente_field', None)
+    return CONFIRMAR_DATOS
+
+
+def _recalcular_totales(context) -> None:
+    """Recalcula subtotal y total basado en items."""
+    items = context.user_data.get('items', [])
+    total = sum(i.get('precio', 0) * i.get('cantidad', 1) for i in items)
+    context.user_data['subtotal'] = total
+    context.user_data['total'] = total
+
+
+async def _volver_menu_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Muestra el menú de edición de items."""
+    from src.bot.handlers.shared import get_items_edit_keyboard
+
+    items = context.user_data.get('items', [])
+
+    items_text = "EDITAR ITEMS\n=========================\n\n"
+    total = 0
+    for i, item in enumerate(items, 1):
+        nombre = item.get('nombre', item.get('descripcion', f'Item {i}'))
+        cantidad = item.get('cantidad', 1)
+        precio = item.get('precio', 0)
+        subtotal = cantidad * precio
+        total += subtotal
+        items_text += f"{i}. {nombre}\n"
+        items_text += f"   {cantidad} x {format_currency(precio)} = {format_currency(subtotal)}\n\n"
+
+    items_text += f"TOTAL: {format_currency(total)}\n\n"
+    items_text += "Selecciona un item para editar:"
+
+    await update.message.reply_text(
+        items_text,
+        reply_markup=get_items_edit_keyboard(items)
+    )
+
+    return EDITAR_SELECCIONAR_ITEM
 
 
 def get_invoice_conversation_handler() -> ConversationHandler:
