@@ -167,42 +167,37 @@ class N8NService:
         """
         Envía datos de factura a n8n para generar PDF.
 
+        El bot genera HTML localmente para el usuario.
+        n8n genera PDF con formato texto para archivo formal.
+
         Args:
-            invoice_data: Diccionario con datos completos de la factura
+            invoice_data: Diccionario con datos de la factura
             organization_id: ID de organización
 
         Returns:
-            N8NPDFResponse con URL o base64 del PDF
+            N8NPDFResponse con URL del PDF
         """
+        numero_factura = invoice_data.get("numero_factura", "BORRADOR")
         payload = {
             "tipo_evento": "generar_pdf",
-            "organization_id": organization_id,
-            "factura": {
-                "id": invoice_data.get("id"),
-                "numero": invoice_data.get("numero_factura"),
-                "fecha_emision": invoice_data.get("fecha_emision", datetime.utcnow().strftime("%Y-%m-%d")),
-                "fecha_vencimiento": invoice_data.get("fecha_vencimiento"),
-            },
-            "cliente": {
-                "nombre": invoice_data.get("cliente_nombre"),
-                "direccion": invoice_data.get("cliente_direccion"),
-                "ciudad": invoice_data.get("cliente_ciudad"),
-                "email": invoice_data.get("cliente_email"),
-                "telefono": invoice_data.get("cliente_telefono"),
-                "cedula": invoice_data.get("cliente_cedula"),
-            },
+            "numero_factura": numero_factura,
+            "fecha_emision": invoice_data.get("fecha_emision"),
+            "fecha_vencimiento": invoice_data.get("fecha_vencimiento"),
+            "cliente_nombre": invoice_data.get("cliente_nombre"),
+            "cliente_direccion": invoice_data.get("cliente_direccion"),
+            "cliente_ciudad": invoice_data.get("cliente_ciudad"),
+            "cliente_email": invoice_data.get("cliente_email"),
+            "cliente_telefono": invoice_data.get("cliente_telefono"),
+            "cliente_cedula": invoice_data.get("cliente_cedula"),
             "items": invoice_data.get("items", []),
-            "totales": {
-                "subtotal": invoice_data.get("subtotal", 0),
-                "descuento": invoice_data.get("descuento", 0),
-                "impuesto": invoice_data.get("impuesto", 0),
-                "total": invoice_data.get("total", 0),
-            },
-            "vendedor": {
-                "nombre": invoice_data.get("vendedor_nombre"),
-                "cedula": invoice_data.get("vendedor_cedula"),
-            },
+            "subtotal": invoice_data.get("subtotal", 0),
+            "descuento": invoice_data.get("descuento", 0),
+            "impuesto": invoice_data.get("impuesto", 0),
+            "total": invoice_data.get("total", 0),
+            "vendedor_nombre": invoice_data.get("vendedor_nombre"),
+            "vendedor_cedula": invoice_data.get("vendedor_cedula"),
             "notas": invoice_data.get("notas"),
+            "organization_id": organization_id,
             "timestamp": datetime.utcnow().isoformat()
         }
         return await self._send_pdf_request(payload)
@@ -397,7 +392,7 @@ class N8NService:
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                logger.info(f"Enviando a n8n/pdf: factura={payload.get('factura', {}).get('numero')}")
+                logger.info(f"Enviando a n8n/pdf: factura={payload.get('numero_factura')}")
 
                 response = await client.post(
                     self.pdf_webhook_url,
@@ -410,7 +405,12 @@ class N8NService:
                     return N8NPDFResponse(
                         success=data.get('success', True),
                         pdf_url=data.get('pdf_url'),
+                        pdf_view_url=data.get('pdf_view_url'),
+                        pdf_file_id=data.get('pdf_file_id'),
                         pdf_base64=data.get('pdf_base64'),
+                        html=data.get('html'),
+                        filename=data.get('filename'),
+                        numero_factura=data.get('numero_factura'),
                         error=data.get('error')
                     )
                 else:
