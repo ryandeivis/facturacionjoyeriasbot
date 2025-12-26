@@ -10,6 +10,10 @@ Plantilla basada en diseno oficial de PARADISE GROUP:
 - Tabla de items (hasta 6 productos)
 - Totales con Subtotal, Descuento, IVA, Total
 - Footer con agradecimiento
+
+Arquitectura:
+- Usa ThemeFactory para colores/fuentes configurables por tenant
+- Soporta multiples plantillas para SaaS multi-tenant
 """
 
 from typing import Dict, Any, List, Optional
@@ -18,6 +22,12 @@ from dataclasses import dataclass
 
 from config.settings import settings
 from src.utils.logger import get_logger
+from src.services.theme_constants import (
+    ThemeFactory,
+    DEFAULT_COLORS,
+    DEFAULT_COMPANY,
+    DEFAULT_TEXTS
+)
 
 logger = get_logger(__name__)
 
