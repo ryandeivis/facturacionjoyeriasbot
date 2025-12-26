@@ -78,7 +78,9 @@ class AuthMiddleware(BaseMiddleware):
                     f"Usuario inactivo: {user_data.get('cedula')}"
                 )
                 await update.message.reply_text(
-                    "Tu cuenta ha sido desactivada. Contacta al administrador."
+                    "⏸ Cuenta suspendida\n\n"
+                    "Tu cuenta ha sido desactivada.\n"
+                    "Contacta al administrador."
                 )
                 return False
 
@@ -137,7 +139,8 @@ class RoleMiddleware(BaseMiddleware):
             )
             if update.message:
                 await update.message.reply_text(
-                    "No tienes permisos para realizar esta acción."
+                    "🚫 Sin permisos\n\n"
+                    "No tienes acceso a esta función."
                 )
             return False
 
@@ -187,7 +190,8 @@ class TenantAuthMiddleware(BaseMiddleware):
                 f"Usuario sin organization_id: {user_data.get('cedula')}"
             )
             await update.message.reply_text(
-                "Error de configuración. Contacta al administrador."
+                "⚠ Error de configuración\n\n"
+                "Contacta al administrador."
             )
             return False
 

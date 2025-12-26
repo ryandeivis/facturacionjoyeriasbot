@@ -21,10 +21,10 @@ class ErrorMiddleware(BaseMiddleware):
 
     # Mensajes de error por tipo de excepción
     ERROR_MESSAGES: Dict[Type[Exception], str] = {
-        ValueError: "Datos inválidos. Por favor verifica e intenta de nuevo.",
-        TimeoutError: "La operación tardó demasiado. Intenta de nuevo.",
-        ConnectionError: "Error de conexión. Verifica tu internet.",
-        PermissionError: "No tienes permisos para esta acción.",
+        ValueError: "⚠ Datos inválidos\n\nPor favor, verifica e intenta de nuevo.",
+        TimeoutError: "⏱ Tiempo agotado\n\nLa operación tardó demasiado. Intenta de nuevo.",
+        ConnectionError: "📡 Sin conexión\n\nVerifica tu conexión a internet.",
+        PermissionError: "🚫 Sin permisos\n\nNo tienes acceso a esta función.",
     }
 
     def __init__(
@@ -214,8 +214,9 @@ class ConversationErrorMiddleware(BaseMiddleware):
         if update.message:
             try:
                 await update.message.reply_text(
-                    "Ocurrió un error. La operación ha sido cancelada.\n"
-                    "Usa /menu para volver al menú principal."
+                    "⚠ Ocurrió un error\n\n"
+                    "La operación ha sido cancelada.\n"
+                    "Usa /menu para volver al menú."
                 )
             except Exception:
                 pass

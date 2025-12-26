@@ -40,8 +40,9 @@ class RateLimitMiddleware(BaseMiddleware):
         self.max_requests = max_requests or settings.RATE_LIMIT_REQUESTS
         self.window_seconds = window_seconds or settings.RATE_LIMIT_WINDOW
         self.message = message or (
-            f"Has excedido el límite de {self.max_requests} mensajes "
-            f"por {self.window_seconds} segundos. Espera un momento."
+            f"⏳ Demasiados mensajes\n\n"
+            f"Has excedido el límite de {self.max_requests} mensajes.\n"
+            f"Por favor, espera un momento."
         )
 
         # Estructura: {user_id: [(timestamp, count), ...]}
@@ -204,7 +205,7 @@ class BurstRateLimitMiddleware(BaseMiddleware):
         super().__init__("burst_rate_limit")
         self.burst_limit = burst_limit
         self.sustained_rate = sustained_rate
-        self.message = message or "Demasiados mensajes. Espera un momento."
+        self.message = message or "⏳ Demasiados mensajes\n\nPor favor, espera un momento."
 
         # Token bucket: {user_id: (tokens, last_update)}
         self._buckets: Dict[int, Tuple[float, datetime]] = {}

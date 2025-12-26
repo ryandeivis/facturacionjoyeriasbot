@@ -85,8 +85,9 @@ async def recibir_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Validar que solo contenga números
     if not cedula.isdigit():
         await update.message.reply_text(
-            "Cédula inválida. Solo números.\n\n"
-            "Ingresa tu cédula:"
+            "⚠ Cédula inválida\n\n"
+            "Solo se permiten números.\n"
+            "Ingresa tu cédula nuevamente:"
         )
         return CEDULA
 
@@ -115,8 +116,8 @@ async def recibir_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data['organization_id'] = usuario.organization_id
 
         await update.message.reply_text(
-            f"Hola {usuario.nombre_completo}\n\n"
-            "Ingresa tu contraseña:"
+            f"👋 Hola, {usuario.nombre_completo}\n\n"
+            "🔐 Ingresa tu contraseña:"
         )
 
         return PASSWORD
@@ -165,7 +166,7 @@ async def recibir_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     markup = get_menu_keyboard(rol)
 
     await update.message.reply_text(
-        f"Autenticación exitosa\n\n"
+        f"✅ Sesión iniciada\n\n"
         f"Bienvenido, {nombre}\n\n"
         f"¿Qué deseas hacer?",
         reply_markup=markup
@@ -178,36 +179,39 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Maneja las opciones del menú principal"""
     opcion = update.message.text
 
-    if '1.' in opcion or 'Nueva Factura' in opcion:
+    if 'Nueva Factura' in opcion:
         # Importar aquí para evitar circular import en el flujo
         from src.bot.handlers.invoice import iniciar_nueva_factura
         return await iniciar_nueva_factura(update, context)
 
-    elif '2.' in opcion or 'Mis Facturas' in opcion:
+    elif 'Mis Facturas' in opcion:
         await mostrar_mis_facturas(update, context)
         return MENU_PRINCIPAL
 
-    elif '3.' in opcion or 'Buscar' in opcion:
+    elif 'Buscar' in opcion:
         await update.message.reply_text(
-            "BUSCAR FACTURA\n\n"
+            "🔍 BUSCAR FACTURA\n"
+            "━━━━━━━━━━━━━━━━━\n\n"
             "Esta función estará disponible próximamente."
         )
         return MENU_PRINCIPAL
 
-    elif '4.' in opcion or 'Crear Usuario' in opcion:
+    elif 'Crear Usuario' in opcion:
         rol = context.user_data.get('rol')
         if rol == UserRole.ADMIN.value:
             await update.message.reply_text(
-                "CREAR USUARIO\n\n"
+                "👤 CREAR USUARIO\n"
+                "━━━━━━━━━━━━━━━━\n\n"
                 "Esta función estará disponible próximamente."
             )
         else:
             await update.message.reply_text(
-                "No tienes permisos para esta acción."
+                "🚫 Sin permisos\n\n"
+                "No tienes acceso a esta función."
             )
         return MENU_PRINCIPAL
 
-    elif 'Cerrar' in opcion:
+    elif 'Cerrar' in opcion or 'Sesión' in opcion:
         await update.message.reply_text(
             MENSAJES['sesion_cerrada'],
             reply_markup=ReplyKeyboardRemove()
@@ -219,7 +223,8 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     rol = context.user_data.get('rol')
     markup = get_menu_keyboard(rol)
     await update.message.reply_text(
-        "Opción no reconocida. Selecciona una opción:",
+        "❓ Opción no reconocida\n\n"
+        "Por favor, selecciona una opción del menú:",
         reply_markup=markup
     )
     return MENU_PRINCIPAL
@@ -237,36 +242,38 @@ async def mostrar_mis_facturas(update: Update, context: ContextTypes.DEFAULT_TYP
 
         if not facturas:
             await update.message.reply_text(
-                "MIS FACTURAS\n\n"
-                "No tienes facturas registradas aún."
+                "📋 MIS FACTURAS\n"
+                "━━━━━━━━━━━━━━━\n\n"
+                "Aún no tienes facturas registradas."
             )
             return
 
-        mensaje = "MIS FACTURAS (últimas 10)\n"
-        mensaje += "==============================\n\n"
+        mensaje = "📋 MIS FACTURAS\n"
+        mensaje += "━━━━━━━━━━━━━━━━━━━━\n"
+        mensaje += "Últimas 10 facturas\n\n"
 
         for f in facturas:
             estado_formatted = format_invoice_status(f.estado)
             mensaje += f"{estado_formatted}\n"
-            mensaje += f"   No: {f.numero_factura}\n"
-            mensaje += f"   Cliente: {f.cliente_nombre}\n"
-            mensaje += f"   Total: {format_currency(f.total)}\n"
-            mensaje += f"   Fecha: {f.created_at.strftime('%d/%m/%Y')}\n\n"
+            mensaje += f"   📄 No: {f.numero_factura}\n"
+            mensaje += f"   👤 {f.cliente_nombre}\n"
+            mensaje += f"   💰 {format_currency(f.total)}\n"
+            mensaje += f"   📅 {f.created_at.strftime('%d/%m/%Y')}\n\n"
 
         await update.message.reply_text(mensaje)
 
     except Exception as e:
         logger.error(f"Error obteniendo facturas: {e}")
         await update.message.reply_text(
-            "Error al obtener facturas.\n"
-            "Intenta más tarde."
+            "⚠ Error al obtener facturas\n\n"
+            "Por favor, intenta más tarde."
         )
 
 
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Comando /cancel"""
     await update.message.reply_text(
-        "Operación cancelada.",
+        "✖ Operación cancelada",
         reply_markup=ReplyKeyboardRemove()
     )
     limpiar_sesion(context)

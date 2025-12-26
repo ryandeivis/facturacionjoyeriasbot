@@ -12,43 +12,51 @@ Separado de shared.py para seguir el principio de responsabilidad única.
 
 MENSAJES = {
     'bienvenida': (
-        "JOYERIA - SISTEMA DE FACTURACION\n"
-        "================================\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "       ✨ JOYERÍA ✨\n"
+        "   Sistema de Facturación\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "Bienvenido al sistema de facturación\n"
-        "para joyerías.\n\n"
-        "Para comenzar, ingresa tu número de cédula:"
+        "exclusivo para joyerías.\n\n"
+        "📋 Ingresa tu número de cédula:"
     ),
     'no_autenticado': (
-        "Debes iniciar sesión primero.\n"
-        "Usa /start para comenzar."
+        "🔐 Sesión requerida\n\n"
+        "Para continuar, inicia sesión con /start"
     ),
     'operacion_cancelada': (
-        "Operación cancelada.\n\n"
-        "¿Qué deseas hacer?"
+        "✖ Operación cancelada\n\n"
+        "¿En qué puedo ayudarte?"
     ),
     'error_conexion': (
-        "Error al conectar con la base de datos.\n\n"
-        "Intenta más tarde."
+        "⚠ Sin conexión\n\n"
+        "No fue posible conectar con el servidor.\n"
+        "Por favor, intenta en unos minutos."
     ),
     'sesion_cerrada': (
-        "Hasta pronto!\n\n"
-        "Sesión cerrada."
+        "👋 ¡Hasta pronto!\n\n"
+        "Tu sesión ha sido cerrada.\n"
+        "Gracias por usar nuestro sistema."
     ),
     'usuario_no_encontrado': (
-        "Usuario no encontrado.\n\n"
+        "🔍 Usuario no registrado\n\n"
+        "No encontramos tu cuenta en el sistema.\n"
         "Contacta al administrador para registrarte."
     ),
     'usuario_inactivo': (
-        "Usuario inactivo.\n\n"
-        "Contacta al administrador."
+        "⏸ Cuenta suspendida\n\n"
+        "Tu cuenta está temporalmente inactiva.\n"
+        "Contacta al administrador para más información."
     ),
     'password_incorrecta': (
-        "Contraseña incorrecta.\n\n"
-        "Intenta nuevamente con /start"
+        "🔑 Contraseña incorrecta\n\n"
+        "Verifica tu contraseña e intenta nuevamente.\n"
+        "Usa /start para reiniciar."
     ),
     'error_general': (
-        "Ha ocurrido un error.\n\n"
-        "Por favor intenta de nuevo."
+        "⚠ Algo salió mal\n\n"
+        "Ocurrió un error inesperado.\n"
+        "Por favor, intenta de nuevo."
     )
 }
 
@@ -58,89 +66,90 @@ MENSAJES = {
 # ============================================================================
 
 GUIA_INPUT_BASE = """
-INFORMACION REQUERIDA
-=====================
+📝 INFORMACIÓN REQUERIDA
+━━━━━━━━━━━━━━━━━━━━━━━━
 
 Para generar tu factura necesito:
 
-PRODUCTOS (obligatorio):
-  - Nombre del producto
-  - Descripcion breve
-  - Cantidad
-  - Precio unitario
+📦 PRODUCTOS
+   • Nombre del producto
+   • Descripción breve
+   • Cantidad
+   • Precio unitario
 
-CLIENTE (se pedira despues):
-  - Nombre completo
-  - Direccion
-  - Ciudad
-  - Email
+👤 CLIENTE (se solicita después)
+   • Nombre completo
+   • Dirección
+   • Ciudad
+   • Email
 
-Puedes incluir hasta 6 productos.
+💡 Puedes incluir hasta 6 productos.
 """
 
 GUIA_TEXTO = """
-INGRESO POR TEXTO
-=================
+⌨️ INGRESO POR TEXTO
+━━━━━━━━━━━━━━━━━━━━
 
 Escribe los productos a facturar.
 
-EJEMPLO:
-1. Anillo de compromiso oro 18k
-   Anillo solitario con diamante 0.5ct
-   Cantidad: 1 - Precio: $2.500.000
+📌 Ejemplo:
 
-2. Cadena plata 925
-   Cadena eslabones 50cm
-   Cantidad: 1 - Precio: $180.000
+1️⃣ Anillo de compromiso oro 18k
+   Solitario con diamante 0.5ct
+   Cantidad: 1 · Precio: $2.500.000
 
-3. Aretes perlas
-   Aretes gota con perlas cultivadas
-   Cantidad: 2 - Precio: $95.000
+2️⃣ Cadena plata 925
+   Eslabones 50cm
+   Cantidad: 1 · Precio: $180.000
 
-TIP: Incluye nombre, descripcion, cantidad y precio de cada item.
+3️⃣ Aretes perlas cultivadas
+   Tipo gota
+   Cantidad: 2 · Precio: $95.000
+
+💡 Incluye nombre, descripción, cantidad y precio.
 """
 
 GUIA_VOZ = """
-INGRESO POR VOZ
-===============
+🎙️ INGRESO POR VOZ
+━━━━━━━━━━━━━━━━━━
 
-Envia un mensaje de voz dictando los productos.
+Envía un mensaje de voz dictando los productos.
 
-EJEMPLO DE LO QUE DEBES DECIR:
+📌 Ejemplo de lo que debes decir:
 
-"Primer producto: anillo de compromiso en oro 18 kilates,
-es un solitario con diamante de medio quilate,
-cantidad uno, precio dos millones quinientos mil pesos.
+"Primer producto: anillo de compromiso
+en oro 18 kilates, solitario con diamante
+de medio quilate, cantidad uno,
+precio dos millones quinientos mil pesos.
 
 Segundo producto: cadena de plata 925,
-eslabones de 50 centimetros,
-cantidad uno, precio ciento ochenta mil pesos.
+eslabones de 50 centímetros, cantidad uno,
+precio ciento ochenta mil pesos.
 
 Tercer producto: aretes de perlas cultivadas,
 tipo gota, cantidad dos,
 precio noventa y cinco mil pesos cada uno."
 
-TIP: Habla claro y menciona cantidad y precio de cada item.
+💡 Habla claro y menciona cantidad y precio de cada ítem.
 """
 
 GUIA_FOTO = """
-INGRESO POR FOTO
-================
+📸 INGRESO POR FOTO
+━━━━━━━━━━━━━━━━━━━
 
-Envia una foto clara de:
-- Lista de productos escrita
-- Ticket o recibo
-- Cotizacion previa
-- Nota de pedido
+Envía una foto clara de:
+   • Lista de productos escrita
+   • Ticket o recibo
+   • Cotización previa
+   • Nota de pedido
 
-ASEGURATE QUE LA IMAGEN TENGA:
-- Buena iluminacion
-- Texto legible
-- Nombres de productos
-- Cantidades
-- Precios
+✅ Asegúrate que la imagen tenga:
+   • Buena iluminación
+   • Texto legible
+   • Nombres de productos
+   • Cantidades y precios
 
-TIP: Evita sombras y reflejos. Texto horizontal.
+💡 Evita sombras y reflejos. Mantén el texto horizontal.
 """
 
 
@@ -149,15 +158,15 @@ TIP: Evita sombras y reflejos. Texto horizontal.
 # ============================================================================
 
 MSG_SELECCIONAR_INPUT = """
-NUEVA FACTURA
-=============
+🧾 NUEVA FACTURA
+━━━━━━━━━━━━━━━━
 
-Selecciona cómo deseas ingresar los productos:
+¿Cómo deseas ingresar los productos?
 """
 
 MSG_CONFIRMAR_DATOS = """
-CONFIRMAR DATOS
-===============
+✅ CONFIRMAR DATOS
+━━━━━━━━━━━━━━━━━━
 
 {resumen}
 
@@ -165,14 +174,14 @@ CONFIRMAR DATOS
 """
 
 MSG_FACTURA_GENERADA = """
-FACTURA GENERADA
-================
+🎉 FACTURA GENERADA
+━━━━━━━━━━━━━━━━━━━
 
-Número: {numero}
-Cliente: {cliente}
-Total: {total}
+📄 Número: {numero}
+👤 Cliente: {cliente}
+💰 Total: {total}
 
-La factura ha sido creada exitosamente.
+Tu factura ha sido creada exitosamente.
 """
 
 
@@ -181,22 +190,22 @@ La factura ha sido creada exitosamente.
 # ============================================================================
 
 MSG_EDITAR_ITEM = """
-EDITAR ITEM #{numero}
-====================
+✏️ EDITAR ÍTEM #{numero}
+━━━━━━━━━━━━━━━━━━━━━━
 
-Nombre: {nombre}
-Cantidad: {cantidad}
-Precio: {precio}
+📦 Nombre: {nombre}
+🔢 Cantidad: {cantidad}
+💵 Precio: {precio}
 
-¿Qué campo deseas editar?
+¿Qué campo deseas modificar?
 """
 
 MSG_INGRESA_NUEVO_VALOR = """
-Ingresa el nuevo valor para {campo}:
+📝 Ingresa el nuevo valor para {campo}:
 """
 
 MSG_ITEM_ACTUALIZADO = """
-Item actualizado correctamente.
+✅ Ítem actualizado correctamente.
 """
 
 
@@ -205,24 +214,25 @@ Item actualizado correctamente.
 # ============================================================================
 
 MSG_DATOS_CLIENTE = """
-DATOS DEL CLIENTE
-=================
+👤 DATOS DEL CLIENTE
+━━━━━━━━━━━━━━━━━━━━
 
 Ingresa el nombre completo del cliente:
 """
 
 MSG_CLIENTE_TELEFONO = """
-Ingresa el teléfono del cliente:
+📱 Ingresa el teléfono del cliente:
 """
 
 MSG_CLIENTE_DIRECCION = """
-Ingresa la dirección del cliente:
+📍 Ingresa la dirección del cliente:
 """
 
 MSG_CLIENTE_CIUDAD = """
-Ingresa la ciudad del cliente:
+🏙️ Ingresa la ciudad del cliente:
 """
 
 MSG_CLIENTE_EMAIL = """
-Ingresa el email del cliente (opcional, escribe 'skip' para omitir):
+📧 Ingresa el email del cliente
+   (escribe 'skip' para omitir):
 """

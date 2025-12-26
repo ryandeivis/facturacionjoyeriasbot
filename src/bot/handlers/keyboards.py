@@ -25,15 +25,15 @@ def get_menu_keyboard(rol: str) -> ReplyKeyboardMarkup:
         ReplyKeyboardMarkup con las opciones del menú
     """
     teclado = [
-        ['1. Nueva Factura'],
-        ['2. Mis Facturas'],
-        ['3. Buscar Factura']
+        ['🧾 Nueva Factura'],
+        ['📋 Mis Facturas'],
+        ['🔍 Buscar Factura']
     ]
 
     if rol == UserRole.ADMIN.value:
-        teclado.append(['4. Crear Usuario'])
+        teclado.append(['👤 Crear Usuario'])
 
-    teclado.append(['Cerrar Sesion'])
+    teclado.append(['🚪 Cerrar Sesión'])
 
     return ReplyKeyboardMarkup(teclado, resize_keyboard=True)
 
@@ -45,7 +45,7 @@ def get_cancel_keyboard() -> ReplyKeyboardMarkup:
     Returns:
         ReplyKeyboardMarkup con botón de cancelar
     """
-    return ReplyKeyboardMarkup([['Cancelar']], resize_keyboard=True)
+    return ReplyKeyboardMarkup([['✖ Cancelar']], resize_keyboard=True)
 
 
 def get_confirm_keyboard() -> ReplyKeyboardMarkup:
@@ -56,9 +56,9 @@ def get_confirm_keyboard() -> ReplyKeyboardMarkup:
         ReplyKeyboardMarkup con opciones Si/No/Cancelar
     """
     return ReplyKeyboardMarkup([
-        ['Si, continuar'],
-        ['Editar manualmente'],
-        ['Cancelar']
+        ['✓ Sí, continuar'],
+        ['✏️ Editar manualmente'],
+        ['✖ Cancelar']
     ], resize_keyboard=True)
 
 
@@ -70,11 +70,11 @@ def get_input_type_keyboard() -> ReplyKeyboardMarkup:
         ReplyKeyboardMarkup con opciones de input
     """
     return ReplyKeyboardMarkup([
-        ['Texto - Escribir items'],
-        ['Voz - Dictar items'],
-        ['Foto - Capturar lista'],
-        ['Test PDF - Datos de prueba'],
-        ['Cancelar']
+        ['⌨️ Texto'],
+        ['🎙️ Voz'],
+        ['📸 Foto'],
+        ['🧪 Test PDF'],
+        ['✖ Cancelar']
     ], resize_keyboard=True)
 
 
@@ -86,8 +86,8 @@ def get_generate_keyboard() -> ReplyKeyboardMarkup:
         ReplyKeyboardMarkup con opciones de confirmar/cancelar
     """
     return ReplyKeyboardMarkup([
-        ['CONFIRMAR Y GENERAR'],
-        ['Cancelar']
+        ['✅ CONFIRMAR Y GENERAR'],
+        ['✖ Cancelar']
     ], resize_keyboard=True)
 
 
@@ -106,12 +106,12 @@ def get_confirm_inline_keyboard(has_cliente: bool = False) -> InlineKeyboardMark
         InlineKeyboardMarkup con botones de confirmación y edición
     """
     keyboard = [
-        [InlineKeyboardButton("Sí, continuar", callback_data="confirm_yes")],
-        [InlineKeyboardButton("Editar Items", callback_data="edit_items_menu")],
+        [InlineKeyboardButton("✓ Sí, continuar", callback_data="confirm_yes")],
+        [InlineKeyboardButton("✏️ Editar Productos", callback_data="edit_items_menu")],
     ]
     if has_cliente:
-        keyboard.append([InlineKeyboardButton("Editar Cliente", callback_data="edit_cliente")])
-    keyboard.append([InlineKeyboardButton("Cancelar", callback_data="confirm_cancel")])
+        keyboard.append([InlineKeyboardButton("👤 Editar Cliente", callback_data="edit_cliente")])
+    keyboard.append([InlineKeyboardButton("✖ Cancelar", callback_data="confirm_cancel")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -127,18 +127,18 @@ def get_items_edit_keyboard(items: list) -> InlineKeyboardMarkup:
     """
     keyboard = []
     for i, item in enumerate(items):
-        nombre = item.get('nombre', item.get('descripcion', f'Item {i+1}'))[:MAX_ITEM_NAME_LENGTH]
+        nombre = item.get('nombre', item.get('descripcion', f'Producto {i+1}'))[:MAX_ITEM_NAME_LENGTH]
         precio = item.get('precio', 0)
         keyboard.append([
             InlineKeyboardButton(
-                f"{i+1}. {nombre} - ${precio:,.0f}",
+                f"{i+1}. {nombre} · ${precio:,.0f}",
                 callback_data=f"edit_item_{i}"
             ),
-            InlineKeyboardButton("X", callback_data=f"delete_item_{i}")
+            InlineKeyboardButton("🗑", callback_data=f"delete_item_{i}")
         ])
     if len(items) < MAX_ITEMS_PER_INVOICE:
-        keyboard.append([InlineKeyboardButton("+ Agregar Item", callback_data="add_item")])
-    keyboard.append([InlineKeyboardButton("Volver", callback_data="back_to_confirm")])
+        keyboard.append([InlineKeyboardButton("➕ Agregar", callback_data="add_item")])
+    keyboard.append([InlineKeyboardButton("← Volver", callback_data="back_to_confirm")])
     return InlineKeyboardMarkup(keyboard)
 
 
@@ -153,10 +153,10 @@ def get_item_field_keyboard(item_index: int) -> InlineKeyboardMarkup:
         InlineKeyboardMarkup con opciones de campo
     """
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Editar Nombre", callback_data=f"field_{item_index}_nombre")],
-        [InlineKeyboardButton("Editar Cantidad", callback_data=f"field_{item_index}_cantidad")],
-        [InlineKeyboardButton("Editar Precio", callback_data=f"field_{item_index}_precio")],
-        [InlineKeyboardButton("Volver", callback_data="edit_items_menu")]
+        [InlineKeyboardButton("📦 Nombre", callback_data=f"field_{item_index}_nombre")],
+        [InlineKeyboardButton("🔢 Cantidad", callback_data=f"field_{item_index}_cantidad")],
+        [InlineKeyboardButton("💵 Precio", callback_data=f"field_{item_index}_precio")],
+        [InlineKeyboardButton("← Volver", callback_data="edit_items_menu")]
     ])
 
 
@@ -168,10 +168,10 @@ def get_cliente_edit_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardMarkup con campos del cliente
     """
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("Nombre", callback_data="edit_cliente_nombre")],
-        [InlineKeyboardButton("Teléfono", callback_data="edit_cliente_telefono")],
-        [InlineKeyboardButton("Dirección", callback_data="edit_cliente_direccion")],
-        [InlineKeyboardButton("Ciudad", callback_data="edit_cliente_ciudad")],
-        [InlineKeyboardButton("Email", callback_data="edit_cliente_email")],
-        [InlineKeyboardButton("Volver", callback_data="back_to_confirm")]
+        [InlineKeyboardButton("👤 Nombre", callback_data="edit_cliente_nombre")],
+        [InlineKeyboardButton("📱 Teléfono", callback_data="edit_cliente_telefono")],
+        [InlineKeyboardButton("📍 Dirección", callback_data="edit_cliente_direccion")],
+        [InlineKeyboardButton("🏙️ Ciudad", callback_data="edit_cliente_ciudad")],
+        [InlineKeyboardButton("📧 Email", callback_data="edit_cliente_email")],
+        [InlineKeyboardButton("← Volver", callback_data="back_to_confirm")]
     ])

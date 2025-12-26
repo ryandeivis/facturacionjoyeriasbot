@@ -116,7 +116,9 @@ async def error_handler(update: Update, context) -> None:
     if update and update.effective_message:
         try:
             await update.effective_message.reply_text(
-                "Ocurrió un error inesperado. Por favor intenta de nuevo."
+                "⚠ Algo salió mal\n\n"
+                "Ocurrió un error inesperado.\n"
+                "Por favor, intenta de nuevo."
             )
         except Exception:
             pass

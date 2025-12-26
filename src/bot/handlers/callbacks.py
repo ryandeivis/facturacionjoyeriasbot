@@ -111,27 +111,27 @@ async def _confirm_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         items = context.user_data.get('items', [])
         total = context.user_data.get('total', 0)
 
-        resumen = "RESUMEN DE FACTURA\n"
-        resumen += "=========================\n\n"
-        resumen += f"Cliente: {nombre_cliente}\n"
+        resumen = "📋 RESUMEN DE FACTURA\n"
+        resumen += "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        resumen += f"👤 Cliente: {nombre_cliente}\n"
         if context.user_data.get('cliente_telefono'):
-            resumen += f"Teléfono: {context.user_data.get('cliente_telefono')}\n"
+            resumen += f"   Tel: {context.user_data.get('cliente_telefono')}\n"
         if context.user_data.get('cliente_direccion'):
-            resumen += f"Dirección: {context.user_data.get('cliente_direccion')}\n"
+            resumen += f"   Dir: {context.user_data.get('cliente_direccion')}\n"
         if context.user_data.get('cliente_ciudad'):
-            resumen += f"Ciudad: {context.user_data.get('cliente_ciudad')}\n"
+            resumen += f"   Ciudad: {context.user_data.get('cliente_ciudad')}\n"
         if context.user_data.get('cliente_email'):
-            resumen += f"Email: {context.user_data.get('cliente_email')}\n"
+            resumen += f"   Email: {context.user_data.get('cliente_email')}\n"
 
-        resumen += f"\nItems: {len(items)}\n"
-        resumen += f"Total: {format_currency(total)}\n\n"
+        resumen += f"\n📦 Items: {len(items)}\n"
+        resumen += f"💵 Total: {format_currency(total)}\n\n"
         resumen += "¿Generar factura?"
 
         await query.edit_message_text(resumen)
 
         # Enviar nuevo mensaje con teclado
         await query.message.reply_text(
-            "Presiona CONFIRMAR para generar la factura:",
+            "Presiona CONFIRMAR para generar:",
             reply_markup=get_generate_keyboard()
         )
 
@@ -139,8 +139,8 @@ async def _confirm_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     else:
         # No tenemos nombre, pedir datos del cliente
         await query.edit_message_text(
-            "DATOS DEL CLIENTE\n"
-            "=========================\n\n"
+            "👤 DATOS DEL CLIENTE\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
             "Ingresa el nombre del cliente:"
         )
 
@@ -152,11 +152,11 @@ async def _confirm_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     rol = context.user_data.get('rol')
 
-    await query.edit_message_text("Operación cancelada.")
+    await query.edit_message_text("✖ Operación cancelada")
 
     # Enviar mensaje con menú
     await query.message.reply_text(
-        "¿Qué deseas hacer?",
+        "¿En qué puedo ayudarte?",
         reply_markup=get_menu_keyboard(rol)
     )
 
@@ -175,14 +175,14 @@ async def _show_items_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     if not items:
         await query.edit_message_text(
-            "No hay items para editar.\n"
-            "Usa 'Agregar Item' para comenzar.",
+            "📦 Lista vacía\n\n"
+            "Usa '+ Agregar' para comenzar.",
             reply_markup=get_items_edit_keyboard([])
         )
         return InvoiceStates.EDITAR_SELECCIONAR_ITEM
 
     # Construir resumen de items
-    items_text = "EDITAR ITEMS\n=========================\n\n"
+    items_text = "✏️ EDITAR PRODUCTOS\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
     total = 0
     for i, item in enumerate(items, 1):
         nombre = item.get('nombre', item.get('descripcion', f'Item {i}'))
@@ -193,8 +193,9 @@ async def _show_items_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         items_text += f"{i}. {nombre}\n"
         items_text += f"   {cantidad} x {format_currency(precio)} = {format_currency(subtotal)}\n\n"
 
-    items_text += f"TOTAL: {format_currency(total)}\n\n"
-    items_text += "Selecciona un item para editar:"
+    items_text += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+    items_text += f"💵 Total: {format_currency(total)}\n\n"
+    items_text += "Selecciona un producto para editar:"
 
     await query.edit_message_text(
         items_text,
@@ -214,7 +215,7 @@ async def _show_item_fields(
     items = context.user_data.get('items', [])
 
     if item_index >= len(items):
-        await query.answer("Item no encontrado")
+        await query.answer("Producto no encontrado")
         return await _show_items_menu(update, context)
 
     item = items[item_index]
@@ -225,13 +226,13 @@ async def _show_item_fields(
     context.user_data['editing_item_index'] = item_index
 
     await query.edit_message_text(
-        f"EDITAR ITEM {item_index + 1}\n"
-        f"=========================\n\n"
-        f"Nombre: {nombre}\n"
-        f"Cantidad: {cantidad}\n"
-        f"Precio: {format_currency(precio)}\n"
-        f"Total: {format_currency(cantidad * precio)}\n\n"
-        f"¿Qué deseas editar?",
+        f"✏️ EDITAR PRODUCTO {item_index + 1}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 Nombre: {nombre}\n"
+        f"🔢 Cantidad: {cantidad}\n"
+        f"💵 Precio: {format_currency(precio)}\n"
+        f"💰 Total: {format_currency(cantidad * precio)}\n\n"
+        f"¿Qué campo deseas modificar?",
         reply_markup=get_item_field_keyboard(item_index)
     )
 
@@ -258,7 +259,7 @@ async def _start_field_edit(
     if field == 'nombre':
         current = item.get('nombre', item.get('descripcion', ''))
         await query.edit_message_text(
-            f"Nombre actual: {current}\n\n"
+            f"📦 Nombre actual: {current}\n\n"
             "Escribe el nuevo nombre:"
         )
         return InvoiceStates.EDITAR_ITEM_NOMBRE
@@ -266,16 +267,16 @@ async def _start_field_edit(
     elif field == 'cantidad':
         current = item.get('cantidad', 1)
         await query.edit_message_text(
-            f"Cantidad actual: {current}\n\n"
-            "Escribe la nueva cantidad (número):"
+            f"🔢 Cantidad actual: {current}\n\n"
+            "Escribe la nueva cantidad:"
         )
         return InvoiceStates.EDITAR_ITEM_CANTIDAD
 
     elif field == 'precio':
         current = item.get('precio', 0)
         await query.edit_message_text(
-            f"Precio actual: {format_currency(current)}\n\n"
-            "Escribe el nuevo precio (solo números):"
+            f"💵 Precio actual: {format_currency(current)}\n\n"
+            "Escribe el nuevo precio:"
         )
         return InvoiceStates.EDITAR_ITEM_PRECIO
 
@@ -300,8 +301,8 @@ async def _delete_item(
         context.user_data['subtotal'] = total
         context.user_data['total'] = total
 
-        nombre = deleted.get('nombre', deleted.get('descripcion', 'Item'))
-        await query.answer(f"Item eliminado: {nombre}")
+        nombre = deleted.get('nombre', deleted.get('descripcion', 'Producto'))
+        await query.answer(f"✓ Eliminado: {nombre}")
 
     return await _show_items_menu(update, context)
 
@@ -311,8 +312,8 @@ async def _start_add_item(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
 
     await query.edit_message_text(
-        "AGREGAR ITEM\n"
-        "=========================\n\n"
+        "➕ AGREGAR PRODUCTO\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "Escribe el nombre del producto:"
     )
 
@@ -332,14 +333,14 @@ async def _show_cliente_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     cliente = context.user_data.get('cliente_detectado', {})
 
     mensaje = (
-        "EDITAR CLIENTE\n"
-        "=========================\n\n"
-        f"Nombre: {cliente.get('nombre', 'No detectado')}\n"
-        f"Teléfono: {cliente.get('telefono', 'No detectado')}\n"
-        f"Dirección: {cliente.get('direccion', 'No detectado')}\n"
-        f"Ciudad: {cliente.get('ciudad', 'No detectado')}\n"
-        f"Email: {cliente.get('email', 'No detectado')}\n\n"
-        "Selecciona el campo a editar:"
+        "👤 EDITAR CLIENTE\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"   Nombre: {cliente.get('nombre', '—')}\n"
+        f"   Tel: {cliente.get('telefono', '—')}\n"
+        f"   Dir: {cliente.get('direccion', '—')}\n"
+        f"   Ciudad: {cliente.get('ciudad', '—')}\n"
+        f"   Email: {cliente.get('email', '—')}\n\n"
+        "Selecciona el campo a modificar:"
     )
 
     await query.edit_message_text(
@@ -363,14 +364,14 @@ async def _start_cliente_field_edit(
     context.user_data['editing_cliente_field'] = field
 
     prompts = {
-        'nombre': f"Nombre actual: {current_value}\n\nEscribe el nuevo nombre:",
-        'telefono': f"Teléfono actual: {current_value}\n\nEscribe el nuevo teléfono:",
-        'direccion': f"Dirección actual: {current_value}\n\nEscribe la nueva dirección:",
-        'ciudad': f"Ciudad actual: {current_value}\n\nEscribe la nueva ciudad:",
-        'email': f"Email actual: {current_value}\n\nEscribe el nuevo email:"
+        'nombre': f"👤 Nombre actual: {current_value}\n\nEscribe el nuevo nombre:",
+        'telefono': f"📱 Teléfono actual: {current_value}\n\nEscribe el nuevo teléfono:",
+        'direccion': f"📍 Dirección actual: {current_value}\n\nEscribe la nueva dirección:",
+        'ciudad': f"🏙️ Ciudad actual: {current_value}\n\nEscribe la nueva ciudad:",
+        'email': f"📧 Email actual: {current_value}\n\nEscribe el nuevo email:"
     }
 
-    await query.edit_message_text(prompts.get(field, "Escribe el nuevo valor:"))
+    await query.edit_message_text(prompts.get(field, "📝 Escribe el nuevo valor:"))
 
     # Retornar estado dedicado para recibir texto de edición de cliente
     return InvoiceStates.EDITAR_CLIENTE_CAMPO
@@ -407,28 +408,28 @@ async def _show_confirm_screen(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data['total'] = total
 
     mensaje = (
-        "ITEMS DETECTADOS\n"
-        "=========================\n\n"
+        "📦 PRODUCTOS DETECTADOS\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{items_text}"
-        f"SUBTOTAL: {format_currency(total)}\n"
+        f"💰 Subtotal: {format_currency(total)}\n"
     )
 
     # Mostrar cliente si existe
     if cliente and any([cliente.get('nombre'), cliente.get('telefono')]):
-        mensaje += "\nCLIENTE DETECTADO\n"
-        mensaje += "-------------------------\n"
+        mensaje += "\n👤 CLIENTE DETECTADO\n"
+        mensaje += "━━━━━━━━━━━━━━━━━━━━\n"
         if cliente.get('nombre'):
-            mensaje += f"Nombre: {cliente.get('nombre')}\n"
+            mensaje += f"   Nombre: {cliente.get('nombre')}\n"
         if cliente.get('telefono'):
-            mensaje += f"Teléfono: {cliente.get('telefono')}\n"
+            mensaje += f"   Tel: {cliente.get('telefono')}\n"
         if cliente.get('direccion'):
-            mensaje += f"Dirección: {cliente.get('direccion')}\n"
+            mensaje += f"   Dir: {cliente.get('direccion')}\n"
         if cliente.get('ciudad'):
-            mensaje += f"Ciudad: {cliente.get('ciudad')}\n"
+            mensaje += f"   Ciudad: {cliente.get('ciudad')}\n"
         if cliente.get('email'):
-            mensaje += f"Email: {cliente.get('email')}\n"
+            mensaje += f"   Email: {cliente.get('email')}\n"
 
-    mensaje += "\nSelecciona una opción:"
+    mensaje += "\n¿Qué deseas hacer?"
 
     has_cliente = bool(cliente and cliente.get('nombre'))
 

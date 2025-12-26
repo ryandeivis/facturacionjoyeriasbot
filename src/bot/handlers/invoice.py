@@ -86,12 +86,12 @@ async def iniciar_nueva_factura(update: Update, context: ContextTypes.DEFAULT_TY
         return ConversationHandler.END
 
     await update.message.reply_text(
-        "NUEVA FACTURA\n"
-        "=========================\n\n"
-        "¿Cómo deseas ingresar los items?\n\n"
-        "- Texto: escribe los productos\n"
-        "- Voz: dicta los productos\n"
-        "- Foto: toma foto de lista/ticket",
+        "🧾 NUEVA FACTURA\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "¿Cómo deseas ingresar los productos?\n\n"
+        "⌨️ Texto · Escribe los productos\n"
+        "🎙️ Voz · Dicta los productos\n"
+        "📸 Foto · Captura lista o ticket",
         reply_markup=get_input_type_keyboard()
     )
 
@@ -147,8 +147,8 @@ async def seleccionar_tipo_input(update: Update, context: ContextTypes.DEFAULT_T
 
     # Opción no reconocida
     await update.message.reply_text(
-        "Opción no reconocida.\n"
-        "Selecciona una opción del teclado:",
+        "❓ Opción no reconocida\n\n"
+        "Por favor, selecciona una opción del menú:",
         reply_markup=get_input_type_keyboard()
     )
     return SELECCIONAR_INPUT
@@ -161,7 +161,8 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     # Mostrar mensaje de procesando
     processing_msg = await update.message.reply_text(
-        "Procesando... Por favor espera."
+        "⏳ Procesando...\n\n"
+        "Por favor, espera un momento."
     )
 
     try:
@@ -172,7 +173,7 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             text = update.message.text
             if not text:
                 await processing_msg.edit_text(
-                    "No se recibió texto.\n"
+                    "⚠ No se recibió texto\n\n"
                     "Por favor, escribe los productos:"
                 )
                 return RECIBIR_INPUT
@@ -187,7 +188,7 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             voice = update.message.voice
             if not voice:
                 await processing_msg.edit_text(
-                    "No se recibió audio.\n"
+                    "⚠ No se recibió audio\n\n"
                     "Por favor, envía un mensaje de voz:"
                 )
                 return RECIBIR_INPUT
@@ -209,7 +210,7 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             photos = update.message.photo
             if not photos:
                 await processing_msg.edit_text(
-                    "No se recibió foto.\n"
+                    "⚠ No se recibió foto\n\n"
                     "Por favor, envía una imagen:"
                 )
                 return RECIBIR_INPUT
@@ -230,7 +231,7 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
         else:
             await processing_msg.edit_text(
-                "Tipo de input no reconocido.\n"
+                "⚠ Tipo de entrada no reconocido\n\n"
                 "Por favor, intenta de nuevo."
             )
             return SELECCIONAR_INPUT
@@ -295,10 +296,10 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             context.user_data['total'] = total
 
             mensaje = (
-                "ITEMS DETECTADOS\n"
-                "=========================\n\n"
+                "📦 PRODUCTOS DETECTADOS\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
                 f"{items_text}"
-                f"SUBTOTAL: {format_currency(total)}\n"
+                f"💰 Subtotal: {format_currency(total)}\n"
             )
 
             # Mostrar cliente detectado si existe
@@ -310,30 +311,30 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                     cliente.get('direccion')
                 ])
                 if has_cliente_data:
-                    mensaje += "\nCLIENTE DETECTADO\n"
-                    mensaje += "-------------------------\n"
+                    mensaje += "\n👤 CLIENTE DETECTADO\n"
+                    mensaje += "━━━━━━━━━━━━━━━━━━━━\n"
                     if cliente.get('nombre'):
-                        mensaje += f"Nombre: {cliente.get('nombre')}\n"
+                        mensaje += f"   Nombre: {cliente.get('nombre')}\n"
                     if cliente.get('telefono'):
-                        mensaje += f"Teléfono: {cliente.get('telefono')}\n"
+                        mensaje += f"   Tel: {cliente.get('telefono')}\n"
                     if cliente.get('direccion'):
-                        mensaje += f"Dirección: {cliente.get('direccion')}\n"
+                        mensaje += f"   Dir: {cliente.get('direccion')}\n"
                     if cliente.get('ciudad'):
-                        mensaje += f"Ciudad: {cliente.get('ciudad')}\n"
+                        mensaje += f"   Ciudad: {cliente.get('ciudad')}\n"
                     if cliente.get('email'):
-                        mensaje += f"Email: {cliente.get('email')}\n"
+                        mensaje += f"   Email: {cliente.get('email')}\n"
 
             if response.transcripcion:
-                mensaje += f"\nTranscripción: {response.transcripcion[:100]}...\n"
+                mensaje += f"\n🎤 Transcripción: {response.transcripcion[:100]}...\n"
 
-            mensaje += "\nSelecciona una opción:"
+            mensaje += "\n¿Qué deseas hacer?"
 
             await processing_msg.edit_text(mensaje)
 
             # Usar InlineKeyboard para edición granular
             has_cliente = bool(response.cliente and response.cliente.get('nombre'))
             await update.message.reply_text(
-                "Confirma los datos:",
+                "Selecciona una opción:",
                 reply_markup=get_confirm_inline_keyboard(has_cliente)
             )
 
@@ -344,10 +345,10 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             error_msg = response.error if response else "Error de conexión"
 
             await processing_msg.edit_text(
-                f"No se pudo procesar automáticamente.\n"
-                f"Razón: {error_msg}\n\n"
-                "Por favor, ingresa los items manualmente.\n"
-                "Formato: descripción - $precio\n\n"
+                f"⚠ No se pudo procesar automáticamente\n"
+                f"   Razón: {error_msg}\n\n"
+                "📝 Ingresa los productos manualmente:\n\n"
+                "Formato: nombre - $precio\n\n"
                 "Ejemplo:\n"
                 "Anillo oro 18k - $500000\n"
                 "Cadena plata - $150000"
@@ -360,7 +361,8 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     except Exception as e:
         logger.error(f"Error procesando input: {e}")
         await processing_msg.edit_text(
-            f"Error al procesar: {str(e)}\n\n"
+            f"⚠ Error al procesar\n\n"
+            f"{str(e)}\n\n"
             "Intenta de nuevo o ingresa manualmente."
         )
         return RECIBIR_INPUT
@@ -381,8 +383,8 @@ async def confirmar_datos(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if 'si' in opcion or 'continuar' in opcion:
         await update.message.reply_text(
-            "DATOS DEL CLIENTE\n"
-            "=========================\n\n"
+            "👤 DATOS DEL CLIENTE\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
             "Ingresa el nombre del cliente:",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -390,11 +392,11 @@ async def confirmar_datos(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if 'editar' in opcion or 'manual' in opcion:
         await update.message.reply_text(
-            "EDITAR ITEMS\n"
-            "=========================\n\n"
-            "Ingresa los items en el formato:\n"
-            "descripción - $precio\n\n"
-            "Un item por línea.\n"
+            "✏️ EDITAR PRODUCTOS\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Ingresa los productos en el formato:\n"
+            "nombre - $precio\n\n"
+            "Un producto por línea.\n"
             "Escribe 'listo' cuando termines.",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -402,8 +404,8 @@ async def confirmar_datos(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return EDITAR_ITEMS
 
     await update.message.reply_text(
-        "Opción no reconocida.\n"
-        "Selecciona una opción:",
+        "❓ Opción no reconocida\n\n"
+        "Por favor, selecciona una opción:",
         reply_markup=get_confirm_keyboard()
     )
     return CONFIRMAR_DATOS
@@ -417,7 +419,7 @@ async def editar_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         items = context.user_data.get('items', [])
         if not items:
             await update.message.reply_text(
-                "No has ingresado ningún item.\n"
+                "⚠ Lista vacía\n\n"
                 "Ingresa al menos un producto:"
             )
             return EDITAR_ITEMS
@@ -428,8 +430,8 @@ async def editar_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         context.user_data['total'] = total
 
         await update.message.reply_text(
-            "DATOS DEL CLIENTE\n"
-            "=========================\n\n"
+            "👤 DATOS DEL CLIENTE\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
             "Ingresa el nombre del cliente:",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -447,8 +449,8 @@ async def editar_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             precio = float(parts[1].replace('$', '').replace(',', '').replace('.', ''))
         else:
             await update.message.reply_text(
-                "Formato incorrecto.\n"
-                "Usa: descripción - $precio\n"
+                "⚠ Formato incorrecto\n\n"
+                "Usa: nombre - $precio\n"
                 "Ejemplo: Anillo oro 18k - $500000"
             )
             return EDITAR_ITEMS
@@ -463,16 +465,17 @@ async def editar_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         context.user_data['items'] = items
 
         await update.message.reply_text(
-            f"Item agregado: {descripcion} - {format_currency(precio)}\n\n"
-            f"Total items: {len(items)}\n\n"
-            "Ingresa otro item o escribe 'listo':"
+            f"✅ Agregado: {descripcion}\n"
+            f"   Precio: {format_currency(precio)}\n\n"
+            f"📦 Total productos: {len(items)}\n\n"
+            "Ingresa otro o escribe 'listo':"
         )
         return EDITAR_ITEMS
 
     except (ValueError, IndexError):
         await update.message.reply_text(
-            "No pude entender el precio.\n"
-            "Usa: descripción - $precio\n"
+            "⚠ Precio no válido\n\n"
+            "Usa: nombre - $precio\n"
             "Ejemplo: Anillo oro 18k - $500000"
         )
         return EDITAR_ITEMS
@@ -484,7 +487,8 @@ async def datos_cliente(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     if len(nombre) < 3:
         await update.message.reply_text(
-            "El nombre debe tener al menos 3 caracteres.\n"
+            "⚠ Nombre muy corto\n\n"
+            "Debe tener al menos 3 caracteres.\n"
             "Ingresa el nombre del cliente:"
         )
         return DATOS_CLIENTE
@@ -492,9 +496,9 @@ async def datos_cliente(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     context.user_data['cliente_nombre'] = nombre
 
     await update.message.reply_text(
-        f"Cliente: {nombre}\n\n"
-        "Direccion del cliente (calle y numero):\n"
-        "(Escribe 'omitir' si no tienes)"
+        f"👤 Cliente: {nombre}\n\n"
+        "📍 Dirección (calle y número):\n"
+        "   Escribe 'omitir' si no aplica"
     )
     return CLIENTE_DIRECCION
 
@@ -507,8 +511,8 @@ async def cliente_direccion(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         context.user_data['cliente_direccion'] = direccion
 
     await update.message.reply_text(
-        "Ciudad del cliente:\n"
-        "(Escribe 'omitir' si no tienes)"
+        "🏙️ Ciudad del cliente:\n"
+        "   Escribe 'omitir' si no aplica"
     )
     return CLIENTE_CIUDAD
 
@@ -521,8 +525,8 @@ async def cliente_ciudad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         context.user_data['cliente_ciudad'] = ciudad
 
     await update.message.reply_text(
-        "Email del cliente:\n"
-        "(Escribe 'omitir' si no tienes)"
+        "📧 Email del cliente:\n"
+        "   Escribe 'omitir' si no aplica"
     )
     return CLIENTE_EMAIL
 
@@ -560,17 +564,18 @@ async def _mostrar_resumen_factura(update: Update, context: ContextTypes.DEFAULT
         items_text += f"   {cantidad} x {format_currency(precio)} = {format_currency(item_total)}\n\n"
 
     mensaje = (
-        "RESUMEN DE FACTURA\n"
-        "==============================\n\n"
-        "CLIENTE:\n"
-        f"  Nombre: {context.user_data.get('cliente_nombre', 'N/A')}\n"
-        f"  Direccion: {context.user_data.get('cliente_direccion', 'N/A')}\n"
-        f"  Ciudad: {context.user_data.get('cliente_ciudad', 'N/A')}\n"
-        f"  Email: {context.user_data.get('cliente_email', 'N/A')}\n\n"
-        f"ITEMS:\n{items_text}"
-        f"SUBTOTAL: {format_currency(subtotal)}\n"
-        f"TOTAL: {format_currency(total)}\n\n"
-        "Confirmar y generar factura?"
+        "📋 RESUMEN DE FACTURA\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "👤 CLIENTE\n"
+        f"   Nombre: {context.user_data.get('cliente_nombre', 'N/A')}\n"
+        f"   Dirección: {context.user_data.get('cliente_direccion', 'N/A')}\n"
+        f"   Ciudad: {context.user_data.get('cliente_ciudad', 'N/A')}\n"
+        f"   Email: {context.user_data.get('cliente_email', 'N/A')}\n\n"
+        f"📦 PRODUCTOS\n{items_text}"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 Subtotal: {format_currency(subtotal)}\n"
+        f"💵 TOTAL: {format_currency(total)}\n\n"
+        "¿Confirmar y generar factura?"
     )
 
     await update.message.reply_text(
@@ -601,7 +606,8 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if 'confirmar' in opcion or 'generar' in opcion:
         # Mostrar mensaje de procesando
         processing_msg = await update.message.reply_text(
-            "Generando factura... Por favor espera."
+            "⏳ Generando factura...\n\n"
+            "Por favor, espera un momento."
         )
 
         try:
@@ -642,8 +648,8 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
                 # Actualizar mensaje
                 await processing_msg.edit_text(
-                    f"Factura {invoice.numero_factura} guardada.\n"
-                    "Generando PDF..."
+                    f"✅ Factura {invoice.numero_factura} guardada\n\n"
+                    "📄 Generando PDF..."
                 )
 
                 # Generar HTML local y solicitar PDF a n8n
@@ -656,28 +662,27 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     await _enviar_pdf_usuario(update, context, invoice, html_content, pdf_response)
 
                     await update.message.reply_text(
-                        "FACTURA GENERADA\n"
-                        "==============================\n\n"
-                        f"No. Factura: {invoice.numero_factura}\n"
-                        f"Cliente: {invoice.cliente_nombre}\n"
-                        f"Subtotal: {format_currency(subtotal)}\n"
-                        f"IVA ({int(settings.TAX_RATE * 100)}%): {format_currency(impuesto)}\n"
-                        f"Total: {format_currency(total)}\n"
-                        f"Estado: PENDIENTE\n\n"
-                        "PDF enviado exitosamente.",
+                        "🎉 FACTURA GENERADA\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                        f"📄 No: {invoice.numero_factura}\n"
+                        f"👤 {invoice.cliente_nombre}\n\n"
+                        f"   Subtotal: {format_currency(subtotal)}\n"
+                        f"   IVA ({int(settings.TAX_RATE * 100)}%): {format_currency(impuesto)}\n"
+                        f"💵 Total: {format_currency(total)}\n\n"
+                        f"📌 Estado: Pendiente\n\n"
+                        "✅ PDF enviado correctamente",
                         reply_markup=get_menu_keyboard(rol)
                     )
                 else:
                     # Factura guardada pero sin PDF
                     await update.message.reply_text(
-                        "FACTURA GENERADA\n"
-                        "==============================\n\n"
-                        f"No. Factura: {invoice.numero_factura}\n"
-                        f"Cliente: {invoice.cliente_nombre}\n"
-                        f"Total: {format_currency(total)}\n"
-                        f"Estado: PENDIENTE\n\n"
-                        "Factura guardada.\n"
-                        "(PDF no disponible temporalmente)",
+                        "🎉 FACTURA GENERADA\n"
+                        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                        f"📄 No: {invoice.numero_factura}\n"
+                        f"👤 {invoice.cliente_nombre}\n"
+                        f"💵 Total: {format_currency(total)}\n\n"
+                        f"📌 Estado: Pendiente\n\n"
+                        "⚠ PDF no disponible temporalmente",
                         reply_markup=get_menu_keyboard(rol)
                     )
 
@@ -688,21 +693,21 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
             else:
                 await processing_msg.edit_text(
-                    "Error al guardar la factura.\n"
-                    "Por favor intenta de nuevo."
+                    "⚠ Error al guardar la factura\n\n"
+                    "Por favor, intenta de nuevo."
                 )
                 return GENERAR_FACTURA
 
         except Exception as e:
             logger.error(f"Error generando factura: {e}")
             await processing_msg.edit_text(
-                f"Error: {str(e)}\n\n"
-                "Intenta de nuevo."
+                f"⚠ Error: {str(e)}\n\n"
+                "Por favor, intenta de nuevo."
             )
             return GENERAR_FACTURA
 
     await update.message.reply_text(
-        "Opcion no reconocida.\n"
+        "❓ Opción no reconocida\n\n"
         "Selecciona CONFIRMAR o Cancelar:",
         reply_markup=get_generate_keyboard()
     )
@@ -809,7 +814,7 @@ async def _enviar_pdf_usuario(
                         chat_id=chat_id,
                         document=f,
                         filename=html_filename,
-                        caption=f"Factura {invoice.numero_factura} (HTML)\nAbrir en navegador para ver"
+                        caption=f"📄 Factura {invoice.numero_factura} (HTML)\nAbre en navegador para visualizar"
                     )
 
                 html_path.unlink(missing_ok=True)
@@ -842,7 +847,7 @@ async def _enviar_pdf_usuario(
                                         chat_id=chat_id,
                                         document=f,
                                         filename=pdf_filename,
-                                        caption=f"Factura {invoice.numero_factura} (PDF)\nTotal: {format_currency(invoice.total)}"
+                                        caption=f"📄 Factura {invoice.numero_factura} (PDF)\n💰 Total: {format_currency(invoice.total)}"
                                     )
 
                                 pdf_path.unlink(missing_ok=True)
@@ -854,7 +859,7 @@ async def _enviar_pdf_usuario(
                     # Fallback: enviar link
                     if pdf_response.pdf_view_url:
                         await update.message.reply_text(
-                            f"PDF disponible en:\n{pdf_response.pdf_view_url}"
+                            f"📄 PDF disponible en:\n{pdf_response.pdf_view_url}"
                         )
                         pdf_enviado = True
 
@@ -872,7 +877,7 @@ async def _enviar_pdf_usuario(
                             chat_id=chat_id,
                             document=f,
                             filename=pdf_filename,
-                            caption=f"Factura {invoice.numero_factura} (PDF)\nTotal: {format_currency(invoice.total)}"
+                            caption=f"📄 Factura {invoice.numero_factura} (PDF)\n💰 Total: {format_currency(invoice.total)}"
                         )
 
                     pdf_path.unlink(missing_ok=True)
@@ -928,7 +933,7 @@ async def editar_item_cantidad(update: Update, context: ContextTypes.DEFAULT_TYP
             raise ValueError()
     except ValueError:
         await update.message.reply_text(
-            "Cantidad inválida.\n"
+            "⚠ Cantidad inválida\n\n"
             "Escribe un número mayor a 0:"
         )
         return EDITAR_ITEM_CANTIDAD
@@ -954,7 +959,7 @@ async def editar_item_precio(update: Update, context: ContextTypes.DEFAULT_TYPE)
             raise ValueError()
     except ValueError:
         await update.message.reply_text(
-            "Precio inválido.\n"
+            "⚠ Precio inválido\n\n"
             "Escribe solo números:"
         )
         return EDITAR_ITEM_PRECIO
@@ -976,16 +981,16 @@ async def agregar_item_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if len(nombre) < 2:
         await update.message.reply_text(
-            "El nombre debe tener al menos 2 caracteres.\n"
-            "Escribe el nombre del producto:"
+            "⚠ Nombre muy corto\n\n"
+            "Debe tener al menos 2 caracteres:"
         )
         return AGREGAR_ITEM
 
     context.user_data['new_item'] = {'nombre': nombre}
 
     await update.message.reply_text(
-        f"Producto: {nombre}\n\n"
-        "Escribe la cantidad:"
+        f"📦 Producto: {nombre}\n\n"
+        "🔢 Escribe la cantidad:"
     )
     return AGREGAR_ITEM_CANTIDAD
 
@@ -998,7 +1003,7 @@ async def agregar_item_cantidad(update: Update, context: ContextTypes.DEFAULT_TY
             raise ValueError()
     except ValueError:
         await update.message.reply_text(
-            "Cantidad inválida.\n"
+            "⚠ Cantidad inválida\n\n"
             "Escribe un número mayor a 0:"
         )
         return AGREGAR_ITEM_CANTIDAD
@@ -1008,9 +1013,9 @@ async def agregar_item_cantidad(update: Update, context: ContextTypes.DEFAULT_TY
     context.user_data['new_item'] = new_item
 
     await update.message.reply_text(
-        f"Producto: {new_item.get('nombre')}\n"
-        f"Cantidad: {cantidad}\n\n"
-        "Escribe el precio unitario (solo números):"
+        f"📦 Producto: {new_item.get('nombre')}\n"
+        f"🔢 Cantidad: {cantidad}\n\n"
+        "💵 Escribe el precio unitario:"
     )
     return AGREGAR_ITEM_PRECIO
 
@@ -1025,7 +1030,7 @@ async def agregar_item_precio(update: Update, context: ContextTypes.DEFAULT_TYPE
             raise ValueError()
     except ValueError:
         await update.message.reply_text(
-            "Precio inválido.\n"
+            "⚠ Precio inválido\n\n"
             "Escribe solo números:"
         )
         return AGREGAR_ITEM_PRECIO
@@ -1045,8 +1050,9 @@ async def agregar_item_precio(update: Update, context: ContextTypes.DEFAULT_TYPE
     _recalcular_totales(context)
 
     await update.message.reply_text(
-        f"Item agregado: {new_item.get('nombre')}\n"
-        f"Cantidad: {new_item.get('cantidad')} x {format_currency(precio)}"
+        f"✅ Producto agregado\n\n"
+        f"📦 {new_item.get('nombre')}\n"
+        f"   {new_item.get('cantidad')} x {format_currency(precio)}"
     )
 
     return await _volver_menu_items(update, context)
@@ -1079,33 +1085,33 @@ async def editar_cliente_campo(update: Update, context: ContextTypes.DEFAULT_TYP
         items_text += f"   Cantidad: {cantidad} x {format_currency(precio)} = {format_currency(subtotal)}\n\n"
 
     mensaje = (
-        "ITEMS DETECTADOS\n"
-        "=========================\n\n"
+        "📦 PRODUCTOS DETECTADOS\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"{items_text}"
-        f"SUBTOTAL: {format_currency(total)}\n"
+        f"💰 Subtotal: {format_currency(total)}\n"
     )
 
     if cliente and any([cliente.get('nombre'), cliente.get('telefono')]):
-        mensaje += "\nCLIENTE DETECTADO\n"
-        mensaje += "-------------------------\n"
+        mensaje += "\n👤 CLIENTE DETECTADO\n"
+        mensaje += "━━━━━━━━━━━━━━━━━━━━\n"
         if cliente.get('nombre'):
-            mensaje += f"Nombre: {cliente.get('nombre')}\n"
+            mensaje += f"   Nombre: {cliente.get('nombre')}\n"
         if cliente.get('telefono'):
-            mensaje += f"Teléfono: {cliente.get('telefono')}\n"
+            mensaje += f"   Tel: {cliente.get('telefono')}\n"
         if cliente.get('direccion'):
-            mensaje += f"Dirección: {cliente.get('direccion')}\n"
+            mensaje += f"   Dir: {cliente.get('direccion')}\n"
         if cliente.get('ciudad'):
-            mensaje += f"Ciudad: {cliente.get('ciudad')}\n"
+            mensaje += f"   Ciudad: {cliente.get('ciudad')}\n"
         if cliente.get('email'):
-            mensaje += f"Email: {cliente.get('email')}\n"
+            mensaje += f"   Email: {cliente.get('email')}\n"
 
-    mensaje += "\nSelecciona una opción:"
+    mensaje += "\n¿Qué deseas hacer?"
 
     has_cliente = bool(cliente and cliente.get('nombre'))
 
     await update.message.reply_text(mensaje)
     await update.message.reply_text(
-        "Confirma los datos:",
+        "Selecciona una opción:",
         reply_markup=get_confirm_inline_keyboard(has_cliente)
     )
 
@@ -1127,7 +1133,7 @@ async def _volver_menu_items(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     items = context.user_data.get('items', [])
 
-    items_text = "EDITAR ITEMS\n=========================\n\n"
+    items_text = "✏️ EDITAR PRODUCTOS\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
     total = 0
     for i, item in enumerate(items, 1):
         nombre = item.get('nombre', item.get('descripcion', f'Item {i}'))
@@ -1138,8 +1144,9 @@ async def _volver_menu_items(update: Update, context: ContextTypes.DEFAULT_TYPE)
         items_text += f"{i}. {nombre}\n"
         items_text += f"   {cantidad} x {format_currency(precio)} = {format_currency(subtotal)}\n\n"
 
-    items_text += f"TOTAL: {format_currency(total)}\n\n"
-    items_text += "Selecciona un item para editar:"
+    items_text += f"━━━━━━━━━━━━━━━━━━━━━━\n"
+    items_text += f"💵 Total: {format_currency(total)}\n\n"
+    items_text += "Selecciona un producto para editar:"
 
     await update.message.reply_text(
         items_text,
@@ -1186,13 +1193,13 @@ async def ejecutar_test_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # Mostrar mensaje de procesamiento
     processing_msg = await update.message.reply_text(
-        "TEST PDF - DATOS DE PRUEBA\n"
-        "=========================\n\n"
-        f"Items: {len(test_items)}\n"
-        f"Subtotal: {format_currency(subtotal)}\n"
-        f"IVA ({int(settings.TAX_RATE * 100)}%): {format_currency(impuesto)}\n"
-        f"Total: {format_currency(total)}\n\n"
-        "Generando documentos..."
+        "🧪 TEST PDF\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 Items: {len(test_items)}\n"
+        f"💰 Subtotal: {format_currency(subtotal)}\n"
+        f"📊 IVA ({int(settings.TAX_RATE * 100)}%): {format_currency(impuesto)}\n"
+        f"💵 Total: {format_currency(total)}\n\n"
+        "⏳ Generando documentos..."
     )
 
     try:
@@ -1236,17 +1243,17 @@ async def ejecutar_test_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 chat_id=chat_id,
                 document=f,
                 filename=html_filename,
-                caption="HTML de prueba (abrir en navegador)"
+                caption="📄 HTML de prueba\nAbre en navegador para visualizar"
             )
 
         html_path.unlink(missing_ok=True)
 
         # 3. Enviar a n8n para PDF
         await processing_msg.edit_text(
-            "TEST PDF - DATOS DE PRUEBA\n"
-            "=========================\n\n"
-            "[OK] HTML generado y enviado\n"
-            "Solicitando PDF a n8n..."
+            "🧪 TEST PDF\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "✅ HTML generado y enviado\n"
+            "⏳ Solicitando PDF a n8n..."
         )
 
         pdf_response = await n8n_service.generate_pdf(
@@ -1256,42 +1263,42 @@ async def ejecutar_test_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
         # 4. Mostrar resultado
         resultado = (
-            "TEST PDF - RESULTADO\n"
-            "=========================\n\n"
-            f"Items: {len(test_items)}\n"
-            f"Subtotal: {format_currency(subtotal)}\n"
-            f"IVA ({int(settings.TAX_RATE * 100)}%): {format_currency(impuesto)}\n"
-            f"Total: {format_currency(total)}\n\n"
-            "[OK] HTML: Generado y enviado\n"
+            "🧪 TEST PDF - RESULTADO\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📦 Items: {len(test_items)}\n"
+            f"💰 Subtotal: {format_currency(subtotal)}\n"
+            f"📊 IVA ({int(settings.TAX_RATE * 100)}%): {format_currency(impuesto)}\n"
+            f"💵 Total: {format_currency(total)}\n\n"
+            "✅ HTML: Generado y enviado\n"
         )
 
         if pdf_response and pdf_response.success:
-            resultado += "[OK] PDF n8n: Exitoso\n"
+            resultado += "✅ PDF n8n: Exitoso\n"
             if pdf_response.pdf_url:
-                resultado += f"URL: {pdf_response.pdf_url}\n"
+                resultado += f"🔗 {pdf_response.pdf_url}\n"
         else:
             error_msg = pdf_response.error if pdf_response else "Sin respuesta"
-            resultado += f"[ERROR] PDF n8n: {error_msg}\n"
+            resultado += f"⚠ PDF n8n: {error_msg}\n"
 
-        resultado += "\nVolviendo al menu..."
+        resultado += "\n🔄 Volviendo al menú..."
 
         await processing_msg.edit_text(resultado)
 
         # Mostrar menu
         await update.message.reply_text(
-            "Test completado. Que deseas hacer?",
+            "✅ Test completado\n\n¿Qué deseas hacer?",
             reply_markup=get_menu_keyboard(rol)
         )
 
     except Exception as e:
         logger.error(f"Error en test_pdf: {e}")
         await processing_msg.edit_text(
-            f"TEST PDF - ERROR\n"
-            f"=========================\n\n"
-            f"Error: {str(e)}"
+            f"🧪 TEST PDF - ERROR\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"⚠ {str(e)}"
         )
         await update.message.reply_text(
-            "Que deseas hacer?",
+            "¿Qué deseas hacer?",
             reply_markup=get_menu_keyboard(rol)
         )
 
@@ -1303,8 +1310,8 @@ async def test_pdf_comando(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     """
     if not is_authenticated(context):
         await update.message.reply_text(
-            "Debes iniciar sesion primero.\n"
-            "Usa /start para comenzar."
+            "🔐 Sesión requerida\n\n"
+            "Para continuar, inicia sesión con /start"
         )
         return
 
