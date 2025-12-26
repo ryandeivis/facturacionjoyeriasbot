@@ -15,6 +15,11 @@ Flujo:
 3. Bot: Maneja edición y datos cliente
 4. Bot → n8n/pdf: Envía datos finales
 5. n8n → Bot: Retorna PDF generado
+
+Características de resiliencia:
+- Retry automático con backoff exponencial
+- Circuit breaker para evitar cascadas de fallos
+- Timeouts configurables
 """
 
 import httpx
@@ -27,6 +32,7 @@ from enum import Enum
 from config.settings import settings
 from src.utils.logger import get_logger
 from src.models.invoice import N8NResponse, N8NPDFResponse
+from src.services.http_client import ResilientHTTPClient, CircuitBreakerOpen
 
 logger = get_logger(__name__)
 
@@ -45,12 +51,25 @@ class N8NService:
     Implementa el patrón de arquitectura híbrida donde:
     - El bot maneja la UX/UI y conversación
     - n8n maneja el procesamiento pesado (IA, PDF)
+
+    Características:
+    - Retry automático con backoff exponencial
+    - Circuit breaker para evitar cascadas de fallos
+    - Timeouts configurables por operación
     """
 
     def __init__(self):
         self.extract_webhook_url = settings.N8N_WEBHOOK_URL
         self.pdf_webhook_url = settings.N8N_PDF_WEBHOOK_URL
         self.timeout = settings.N8N_TIMEOUT_SECONDS
+
+        # Cliente HTTP resiliente con retry y circuit breaker
+        self.http_client = ResilientHTTPClient(
+            base_timeout=self.timeout,
+            max_retries=3,
+            circuit_breaker_threshold=5,
+            circuit_breaker_recovery=60
+        )
 
     # =========================================================================
     # MÉTODOS DE EXTRACCIÓN (Webhook 1: /extract)
@@ -438,6 +457,71 @@ class N8NService:
                 success=False,
                 error=str(e)
             )
+
+
+    # =========================================================================
+    # MÉTODOS DE DIAGNÓSTICO
+    # =========================================================================
+
+    def get_health_status(self) -> Dict[str, Any]:
+        """
+        Retorna estado de salud del servicio.
+
+        Returns:
+            Dict con estado del circuit breaker y configuración
+        """
+        return {
+            "extract_webhook_configured": bool(self.extract_webhook_url),
+            "pdf_webhook_configured": bool(self.pdf_webhook_url),
+            "timeout_seconds": self.timeout,
+            "circuit_breaker": self.http_client.get_circuit_status()
+        }
+
+    async def health_check(self) -> Dict[str, Any]:
+        """
+        Verifica conectividad con n8n.
+
+        Returns:
+            Dict con resultado del health check
+        """
+        result = {
+            "extract_webhook": {"status": "unknown"},
+            "pdf_webhook": {"status": "unknown"}
+        }
+
+        # Verificar extract webhook
+        if self.extract_webhook_url:
+            try:
+                response = await self.http_client.get(
+                    self.extract_webhook_url.replace("/webhook/", "/webhook-test/"),
+                    timeout=5.0
+                )
+                result["extract_webhook"] = {
+                    "status": "ok" if response.status_code < 400 else "error",
+                    "status_code": response.status_code
+                }
+            except CircuitBreakerOpen:
+                result["extract_webhook"] = {"status": "circuit_open"}
+            except Exception as e:
+                result["extract_webhook"] = {"status": "error", "error": str(e)}
+
+        # Verificar PDF webhook
+        if self.pdf_webhook_url:
+            try:
+                response = await self.http_client.get(
+                    self.pdf_webhook_url.replace("/webhook/", "/webhook-test/"),
+                    timeout=5.0
+                )
+                result["pdf_webhook"] = {
+                    "status": "ok" if response.status_code < 400 else "error",
+                    "status_code": response.status_code
+                }
+            except CircuitBreakerOpen:
+                result["pdf_webhook"] = {"status": "circuit_open"}
+            except Exception as e:
+                result["pdf_webhook"] = {"status": "error", "error": str(e)}
+
+        return result
 
 
 # Instancia global del servicio (singleton)
