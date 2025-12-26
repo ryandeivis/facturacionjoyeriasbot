@@ -140,6 +140,11 @@ async def seleccionar_tipo_input(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text(GUIA_FOTO)
         return RECIBIR_INPUT
 
+    elif 'test' in opcion or 'prueba' in opcion:
+        # Ejecutar test PDF con datos de prueba
+        await ejecutar_test_pdf(update, context)
+        return AuthStates.MENU_PRINCIPAL
+
     # Opción no reconocida
     await update.message.reply_text(
         "Opción no reconocida.\n"
@@ -1142,6 +1147,168 @@ async def _volver_menu_items(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
     return EDITAR_SELECCIONAR_ITEM
+
+
+async def ejecutar_test_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Ejecuta test de generacion PDF con datos de prueba fijos.
+
+    No requiere extraccion previa - usa datos dummy para probar
+    el flujo de generacion de HTML y PDF.
+    """
+    rol = context.user_data.get('rol')
+
+    # Datos de prueba fijos
+    test_items = [
+        {
+            "nombre": "Anillo Oro 18K",
+            "descripcion": "Solitario con diamante 0.5ct",
+            "cantidad": 1,
+            "precio": 2500000
+        },
+        {
+            "nombre": "Cadena Plata 925",
+            "descripcion": "Cadena eslabones 50cm",
+            "cantidad": 2,
+            "precio": 180000
+        },
+        {
+            "nombre": "Aretes Perlas",
+            "descripcion": "Aretes gota perlas cultivadas",
+            "cantidad": 1,
+            "precio": 350000
+        }
+    ]
+
+    subtotal = sum(i['precio'] * i['cantidad'] for i in test_items)
+    impuesto = int(subtotal * settings.TAX_RATE)
+    total = subtotal + impuesto
+
+    # Mostrar mensaje de procesamiento
+    processing_msg = await update.message.reply_text(
+        "TEST PDF - DATOS DE PRUEBA\n"
+        "=========================\n\n"
+        f"Items: {len(test_items)}\n"
+        f"Subtotal: {format_currency(subtotal)}\n"
+        f"IVA ({int(settings.TAX_RATE * 100)}%): {format_currency(impuesto)}\n"
+        f"Total: {format_currency(total)}\n\n"
+        "Generando documentos..."
+    )
+
+    try:
+        invoice_data = {
+            "numero_factura": "TEST-001",
+            "fecha_emision": datetime.utcnow().strftime("%Y-%m-%d"),
+            "fecha_vencimiento": (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d"),
+            "cliente_nombre": "Cliente de Prueba",
+            "cliente_direccion": "Calle 123 #45-67",
+            "cliente_ciudad": "Bogota",
+            "cliente_email": "cliente@test.com",
+            "cliente_telefono": "3001234567",
+            "cliente_cedula": "1234567890",
+            "items": test_items,
+            "subtotal": subtotal,
+            "descuento": 0,
+            "impuesto": impuesto,
+            "total": total,
+            "vendedor_nombre": context.user_data.get('nombre', 'Vendedor Test'),
+            "vendedor_cedula": context.user_data.get('cedula', '0000000000'),
+            "notas": "Factura de prueba - Test PDF"
+        }
+
+        # 1. Generar HTML local
+        html_content = html_generator.generate(invoice_data)
+        logger.info("HTML de prueba generado")
+
+        # 2. Enviar HTML al usuario
+        chat_id = update.effective_chat.id
+        upload_dir = Path(settings.UPLOAD_DIR)
+        upload_dir.mkdir(exist_ok=True)
+
+        html_filename = "factura_TEST-001.html"
+        html_path = upload_dir / html_filename
+
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+
+        with open(html_path, 'rb') as f:
+            await context.bot.send_document(
+                chat_id=chat_id,
+                document=f,
+                filename=html_filename,
+                caption="HTML de prueba (abrir en navegador)"
+            )
+
+        html_path.unlink(missing_ok=True)
+
+        # 3. Enviar a n8n para PDF
+        await processing_msg.edit_text(
+            "TEST PDF - DATOS DE PRUEBA\n"
+            "=========================\n\n"
+            "[OK] HTML generado y enviado\n"
+            "Solicitando PDF a n8n..."
+        )
+
+        pdf_response = await n8n_service.generate_pdf(
+            invoice_data=invoice_data,
+            organization_id=str(context.user_data.get('organization_id', 'test'))
+        )
+
+        # 4. Mostrar resultado
+        resultado = (
+            "TEST PDF - RESULTADO\n"
+            "=========================\n\n"
+            f"Items: {len(test_items)}\n"
+            f"Subtotal: {format_currency(subtotal)}\n"
+            f"IVA ({int(settings.TAX_RATE * 100)}%): {format_currency(impuesto)}\n"
+            f"Total: {format_currency(total)}\n\n"
+            "[OK] HTML: Generado y enviado\n"
+        )
+
+        if pdf_response and pdf_response.success:
+            resultado += "[OK] PDF n8n: Exitoso\n"
+            if pdf_response.pdf_url:
+                resultado += f"URL: {pdf_response.pdf_url}\n"
+        else:
+            error_msg = pdf_response.error if pdf_response else "Sin respuesta"
+            resultado += f"[ERROR] PDF n8n: {error_msg}\n"
+
+        resultado += "\nVolviendo al menu..."
+
+        await processing_msg.edit_text(resultado)
+
+        # Mostrar menu
+        await update.message.reply_text(
+            "Test completado. Que deseas hacer?",
+            reply_markup=get_menu_keyboard(rol)
+        )
+
+    except Exception as e:
+        logger.error(f"Error en test_pdf: {e}")
+        await processing_msg.edit_text(
+            f"TEST PDF - ERROR\n"
+            f"=========================\n\n"
+            f"Error: {str(e)}"
+        )
+        await update.message.reply_text(
+            "Que deseas hacer?",
+            reply_markup=get_menu_keyboard(rol)
+        )
+
+
+async def test_pdf_comando(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Comando /test_pdf para probar generacion de PDF.
+    Redirige a ejecutar_test_pdf con datos de prueba.
+    """
+    if not is_authenticated(context):
+        await update.message.reply_text(
+            "Debes iniciar sesion primero.\n"
+            "Usa /start para comenzar."
+        )
+        return
+
+    await ejecutar_test_pdf(update, context)
 
 
 def get_invoice_conversation_handler() -> ConversationHandler:

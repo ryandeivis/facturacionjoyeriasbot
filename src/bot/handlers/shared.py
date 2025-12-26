@@ -111,6 +111,7 @@ def get_input_type_keyboard() -> ReplyKeyboardMarkup:
         ['Texto - Escribir items'],
         ['Voz - Dictar items'],
         ['Foto - Capturar lista'],
+        ['Test PDF - Datos de prueba'],
         ['Cancelar']
     ], resize_keyboard=True)
 

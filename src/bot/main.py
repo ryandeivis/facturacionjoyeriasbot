@@ -29,7 +29,7 @@ from src.core.context import (
     shutdown_app_context
 )
 from src.bot.handlers.auth import get_auth_conversation_handler
-from src.bot.handlers.invoice import get_invoice_conversation_handler
+from src.bot.handlers.invoice import get_invoice_conversation_handler, test_pdf_comando
 from src.bot.middleware.base import MiddlewareManager
 from src.bot.middleware.auth import AuthMiddleware
 from src.bot.middleware.rate_limit import RateLimitMiddleware
@@ -158,6 +158,9 @@ def main():
 
     application.add_handler(auth_handler)
     application.add_handler(invoice_handler)
+
+    # Comando /test_pdf para probar generacion de PDF
+    application.add_handler(CommandHandler('test_pdf', test_pdf_comando))
 
     # Handler global de errores
     application.add_error_handler(error_handler)
