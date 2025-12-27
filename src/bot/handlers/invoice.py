@@ -14,6 +14,7 @@ Flujo:
 7. n8n retorna PDF y bot lo envía al usuario
 """
 
+import time
 import base64
 from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import (
@@ -64,8 +65,10 @@ from src.bot.handlers.shared import (
 )
 from config.constants import InvoiceStatus, InputType
 from config.settings import settings
+from src.metrics.tracker import get_metrics_tracker
 
 logger = get_logger(__name__)
+metrics = get_metrics_tracker()
 
 # Estados de la conversación (aliases para compatibilidad)
 SELECCIONAR_INPUT = InvoiceStates.SELECCIONAR_INPUT
@@ -200,6 +203,16 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
                 return RECIBIR_INPUT
 
             context.user_data['input_raw'] = text
+
+            # Track mensaje de texto
+            org_id = context.user_data.get('organization_id')
+            user_id = update.effective_user.id
+            await metrics.track_bot_message(
+                organization_id=str(org_id) if org_id else None,
+                user_id=user_id,
+                message_type="text_invoice"
+            )
+
             # Usar parser local para texto (más rápido y sin costo)
             response = text_parser.parse(text)
             logger.info(f"Texto parseado localmente: {response.success}, {len(response.items)} items")
@@ -224,7 +237,32 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await file.download_to_drive(str(audio_path))
 
             context.user_data['input_raw'] = str(audio_path)
+
+            # Track y procesar voz con métricas
+            org_id = context.user_data.get('organization_id')
+            user_id = update.effective_user.id
+            start_time = time.time()
+
             response = await n8n_service.send_voice_input(str(audio_path), cedula)
+
+            duration_ms = (time.time() - start_time) * 1000
+            await metrics.track_bot_voice(
+                organization_id=str(org_id) if org_id else None,
+                user_id=user_id,
+                success=response.success if response else False,
+                duration_ms=duration_ms
+            )
+
+            # Track extracción IA
+            if response:
+                await metrics.track_ai_extraction(
+                    organization_id=str(org_id) if org_id else "unknown",
+                    user_id=user_id,
+                    extraction_type="voice",
+                    success=response.success,
+                    duration_ms=duration_ms,
+                    items_extracted=len(response.items) if response.items else 0
+                )
 
         elif input_type == InputType.FOTO.value:
             # Descargar foto (la más grande disponible)
@@ -248,7 +286,32 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await file.download_to_drive(str(photo_path))
 
             context.user_data['input_raw'] = str(photo_path)
+
+            # Track y procesar foto con métricas
+            org_id = context.user_data.get('organization_id')
+            user_id = update.effective_user.id
+            start_time = time.time()
+
             response = await n8n_service.send_photo_input(str(photo_path), cedula)
+
+            duration_ms = (time.time() - start_time) * 1000
+            await metrics.track_bot_photo(
+                organization_id=str(org_id) if org_id else None,
+                user_id=user_id,
+                success=response.success if response else False,
+                duration_ms=duration_ms
+            )
+
+            # Track extracción IA
+            if response:
+                await metrics.track_ai_extraction(
+                    organization_id=str(org_id) if org_id else "unknown",
+                    user_id=user_id,
+                    extraction_type="photo",
+                    success=response.success,
+                    duration_ms=duration_ms,
+                    items_extracted=len(response.items) if response.items else 0
+                )
 
         else:
             await processing_msg.edit_text(
@@ -391,6 +454,17 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             f"[{api_error.correlation_id[:8]}] {api_error.message}",
             exc_info=True
         )
+
+        # Track error
+        org_id = context.user_data.get('organization_id')
+        user_id = update.effective_user.id if update.effective_user else None
+        await metrics.track_bot_error(
+            organization_id=str(org_id) if org_id else None,
+            user_id=user_id,
+            error_type="input_processing",
+            error_message=str(e)
+        )
+
         await processing_msg.edit_text(
             "⚠ Error al procesar\n\n"
             "El servicio no está disponible.\n"
@@ -698,6 +772,18 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     }
                 )
                 logger.info(f"Factura creada: {invoice.numero_factura}")
+
+                # Métricas de negocio: factura creada
+                await metrics.track_invoice_created(
+                    organization_id=str(org_id),
+                    amount=float(invoice.total),
+                    user_id=user_id,
+                    metadata={
+                        "numero_factura": invoice.numero_factura,
+                        "items_count": len(invoice.items),
+                        "input_type": context.user_data.get('input_type'),
+                    }
+                )
 
                 # Actualizar mensaje
                 await processing_msg.edit_text(

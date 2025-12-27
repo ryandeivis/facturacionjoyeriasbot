@@ -75,6 +75,10 @@ Usa el header `X-Organization-ID` para identificar la organización.
                 "name": "invoices",
                 "description": "Gestión de facturas"
             },
+            {
+                "name": "business-metrics",
+                "description": "Métricas de negocio SaaS"
+            },
         ],
         contact={
             "name": "Soporte Técnico",
@@ -181,6 +185,11 @@ Usa el header `X-Organization-ID` para identificar la organización.
     if invoices_router:
         app.include_router(invoices_router, prefix="/api/v1")
 
+    # Business Metrics
+    from src.api.business_metrics import business_metrics_router
+    if business_metrics_router:
+        app.include_router(business_metrics_router)
+
     # =========================================================================
     # ROOT ENDPOINT
     # =========================================================================
@@ -203,6 +212,7 @@ Usa el header `X-Organization-ID` para identificar la organización.
             "endpoints": {
                 "health": "/health",
                 "metrics": "/metrics",
+                "business_metrics": "/metrics/business",
                 "organizations": "/api/v1/organizations",
                 "invoices": "/api/v1/invoices"
             }
