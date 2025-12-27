@@ -36,13 +36,54 @@ def create_app() -> Optional["FastAPI"]:
 
     from config.settings import settings
 
-    # Crear aplicación
+    # Crear aplicación con documentación completa
     app = FastAPI(
         title="Jewelry Invoice Bot API",
-        description="API REST para el sistema de facturación de joyería",
+        description="""
+## API REST para el Sistema de Facturación de Joyerías
+
+### Características
+- **Multi-tenant**: Soporte para múltiples organizaciones
+- **Autenticación**: Via API Key o JWT
+- **Rate Limiting**: Límites por plan de suscripción
+- **Validación**: Validación estricta de datos de entrada
+
+### Documentación
+- [Guía de Uso](https://github.com/project/docs/api)
+- [OpenAPI Spec](/openapi.json)
+
+### Autenticación
+Usa el header `X-Organization-ID` para identificar la organización.
+        """,
         version=settings.VERSION,
         docs_url="/docs" if settings.ENVIRONMENT.value != "production" else None,
         redoc_url="/redoc" if settings.ENVIRONMENT.value != "production" else None,
+        openapi_tags=[
+            {
+                "name": "health",
+                "description": "Health checks y estado del sistema"
+            },
+            {
+                "name": "metrics",
+                "description": "Métricas de la aplicación (Prometheus)"
+            },
+            {
+                "name": "organizations",
+                "description": "Gestión de organizaciones (tenants SaaS)"
+            },
+            {
+                "name": "invoices",
+                "description": "Gestión de facturas"
+            },
+        ],
+        contact={
+            "name": "Soporte Técnico",
+            "email": "soporte@joyeriainvoice.com",
+        },
+        license_info={
+            "name": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+        },
     )
 
     # Configurar CORS

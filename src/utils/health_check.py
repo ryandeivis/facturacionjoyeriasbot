@@ -186,7 +186,7 @@ class HealthChecker:
             return SystemHealth(
                 status=HealthStatus.UNKNOWN,
                 components=[],
-                message="No hay health checks registrados"
+                uptime_seconds=self.uptime_seconds
             )
 
         # Ejecutar todos en paralelo

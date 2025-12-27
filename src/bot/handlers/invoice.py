@@ -25,7 +25,20 @@ from telegram.ext import (
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from src.utils.logger import get_logger
+from src.utils.logger import get_logger, audit_logger, bind_context
+from src.utils.rate_limiter import check_invoice_rate
+from src.utils.validators import (
+    IdentityValidator,
+    ContactValidator,
+    ProductValidator,
+    ValidationLimits
+)
+from src.utils.errors import (
+    handle_errors,
+    ExternalAPIError,
+    DatabaseError,
+    BusinessError
+)
 from src.database.connection import get_db
 from src.database.queries.invoice_queries import create_invoice
 from src.services.n8n_service import n8n_service
@@ -84,6 +97,14 @@ async def iniciar_nueva_factura(update: Update, context: ContextTypes.DEFAULT_TY
     if not is_authenticated(context):
         await update.message.reply_text(MENSAJES['no_autenticado'])
         return ConversationHandler.END
+
+    # Asegurar contexto de logging está establecido
+    user_id = context.user_data.get('user_id')
+    org_id = context.user_data.get('organization_id')
+    if user_id and org_id:
+        bind_context(org_id=str(org_id), user_id=str(user_id))
+
+    logger.info("Iniciando flujo de nueva factura")
 
     await update.message.reply_text(
         "🧾 NUEVA FACTURA\n"
@@ -359,11 +380,22 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             return RECIBIR_INPUT
 
     except Exception as e:
-        logger.error(f"Error procesando input: {e}")
+        # Loggear con contexto completo
+        from src.utils.errors import ExternalAPIError
+        api_error = ExternalAPIError(
+            message=f"Error procesando input: {str(e)}",
+            service="n8n",
+            original_error=e
+        )
+        logger.error(
+            f"[{api_error.correlation_id[:8]}] {api_error.message}",
+            exc_info=True
+        )
         await processing_msg.edit_text(
-            f"⚠ Error al procesar\n\n"
-            f"{str(e)}\n\n"
-            "Intenta de nuevo o ingresa manualmente."
+            "⚠ Error al procesar\n\n"
+            "El servicio no está disponible.\n"
+            "Intenta de nuevo o ingresa manualmente.\n\n"
+            f"📋 Ref: {api_error.correlation_id[:8]}"
         )
         return RECIBIR_INPUT
 
@@ -483,20 +515,22 @@ async def editar_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 async def datos_cliente(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recibe el nombre del cliente"""
-    nombre = update.message.text.strip()
+    nombre_raw = update.message.text.strip()
 
-    if len(nombre) < 3:
+    # Validar nombre con validador centralizado
+    result = IdentityValidator.validate_nombre_persona(nombre_raw)
+    if not result.valid:
         await update.message.reply_text(
-            "⚠ Nombre muy corto\n\n"
-            "Debe tener al menos 3 caracteres.\n"
+            f"⚠ Nombre inválido\n\n"
+            f"{result.error}\n"
             "Ingresa el nombre del cliente:"
         )
         return DATOS_CLIENTE
 
-    context.user_data['cliente_nombre'] = nombre
+    context.user_data['cliente_nombre'] = result.sanitized
 
     await update.message.reply_text(
-        f"👤 Cliente: {nombre}\n\n"
+        f"👤 Cliente: {result.sanitized}\n\n"
         "📍 Dirección (calle y número):\n"
         "   Escribe 'omitir' si no aplica"
     )
@@ -604,6 +638,14 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return AuthStates.MENU_PRINCIPAL
 
     if 'confirmar' in opcion or 'generar' in opcion:
+        # Rate limit: protección contra creación excesiva de facturas
+        user_id = context.user_data.get('user_id')
+        org_id = context.user_data.get('organization_id')
+        allowed, rate_message = check_invoice_rate(user_id, org_id)
+        if not allowed:
+            await update.message.reply_text(rate_message)
+            return GENERAR_FACTURA
+
         # Mostrar mensaje de procesando
         processing_msg = await update.message.reply_text(
             "⏳ Generando factura...\n\n"
@@ -644,7 +686,18 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             db.close()
 
             if invoice:
-                logger.info(f"Factura creada: {invoice.numero_factura} por {context.user_data.get('cedula')}")
+                # Audit: factura creada exitosamente
+                audit_logger.create(
+                    entity_type="invoice",
+                    entity_id=str(invoice.id),
+                    new_values={
+                        "numero_factura": invoice.numero_factura,
+                        "cliente": invoice.cliente_nombre,
+                        "total": float(invoice.total),
+                        "items_count": len(invoice.items)
+                    }
+                )
+                logger.info(f"Factura creada: {invoice.numero_factura}")
 
                 # Actualizar mensaje
                 await processing_msg.edit_text(
@@ -699,10 +752,19 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 return GENERAR_FACTURA
 
         except Exception as e:
-            logger.error(f"Error generando factura: {e}")
+            # Loggear con contexto
+            db_error = DatabaseError(
+                message=f"Error generando factura: {str(e)}",
+                original_error=e
+            )
+            logger.error(
+                f"[{db_error.correlation_id[:8]}] {db_error.message}",
+                exc_info=True
+            )
             await processing_msg.edit_text(
-                f"⚠ Error: {str(e)}\n\n"
-                "Por favor, intenta de nuevo."
+                "⚠ Error al generar factura\n\n"
+                "Por favor, intenta de nuevo.\n\n"
+                f"📋 Ref: {db_error.correlation_id[:8]}"
             )
             return GENERAR_FACTURA
 
@@ -764,7 +826,12 @@ async def _generar_pdf_factura(invoice, context: ContextTypes.DEFAULT_TYPE):
         return html_content, pdf_response
 
     except Exception as e:
-        logger.error(f"Error generando documentos: {e}")
+        api_error = ExternalAPIError(
+            message=f"Error generando documentos: {str(e)}",
+            service="n8n",
+            original_error=e
+        )
+        logger.error(f"[{api_error.correlation_id[:8]}] {api_error.message}")
         return None, None
 
 
@@ -889,7 +956,12 @@ async def _enviar_pdf_usuario(
         return pdf_enviado or html_enviado
 
     except Exception as e:
-        logger.error(f"Error enviando documentos: {e}")
+        from src.utils.errors import FileError
+        file_error = FileError(
+            message=f"Error enviando documentos: {str(e)}",
+            original_error=e
+        )
+        logger.error(f"[{file_error.correlation_id[:8]}] {file_error.message}")
         return False
 
 
@@ -913,12 +985,23 @@ async def editar_item_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Recibe nuevo nombre del item."""
     from src.bot.handlers.shared import get_items_edit_keyboard
 
-    nuevo_nombre = update.message.text.strip()
+    nombre_raw = update.message.text.strip()
+
+    # Validar nombre de producto
+    result = ProductValidator.validate_nombre_producto(nombre_raw)
+    if not result.valid:
+        await update.message.reply_text(
+            f"⚠ Nombre inválido\n\n"
+            f"{result.error}\n"
+            "Escribe el nuevo nombre:"
+        )
+        return EDITAR_ITEM_NOMBRE
+
     idx = context.user_data.get('editing_item_index', 0)
     items = context.user_data.get('items', [])
 
     if idx < len(items):
-        items[idx]['nombre'] = nuevo_nombre
+        items[idx]['nombre'] = result.sanitized
         context.user_data['items'] = items
 
     # Volver al menú de items
@@ -929,12 +1012,19 @@ async def editar_item_cantidad(update: Update, context: ContextTypes.DEFAULT_TYP
     """Recibe nueva cantidad del item."""
     try:
         cantidad = int(update.message.text.strip())
-        if cantidad < 1:
-            raise ValueError()
     except ValueError:
         await update.message.reply_text(
             "⚠ Cantidad inválida\n\n"
-            "Escribe un número mayor a 0:"
+            "Escribe solo números:"
+        )
+        return EDITAR_ITEM_CANTIDAD
+
+    # Validar cantidad con validador centralizado
+    result = ProductValidator.validate_cantidad(cantidad)
+    if not result.valid:
+        await update.message.reply_text(
+            f"⚠ Cantidad inválida\n\n"
+            f"{result.error}"
         )
         return EDITAR_ITEM_CANTIDAD
 
@@ -951,16 +1041,14 @@ async def editar_item_cantidad(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def editar_item_precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recibe nuevo precio del item."""
-    try:
-        precio_str = update.message.text.strip()
-        precio_str = precio_str.replace('$', '').replace(',', '').replace('.', '')
-        precio = float(precio_str)
-        if precio < 0:
-            raise ValueError()
-    except ValueError:
+    precio_str = update.message.text.strip()
+
+    # Parsear y validar precio con validador centralizado
+    success, precio, error = ProductValidator.parse_precio(precio_str)
+    if not success:
         await update.message.reply_text(
-            "⚠ Precio inválido\n\n"
-            "Escribe solo números:"
+            f"⚠ Precio inválido\n\n"
+            f"{error}"
         )
         return EDITAR_ITEM_PRECIO
 
@@ -977,19 +1065,21 @@ async def editar_item_precio(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def agregar_item_nombre(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recibe nombre del nuevo item."""
-    nombre = update.message.text.strip()
+    nombre_raw = update.message.text.strip()
 
-    if len(nombre) < 2:
+    # Validar nombre de producto
+    result = ProductValidator.validate_nombre_producto(nombre_raw)
+    if not result.valid:
         await update.message.reply_text(
-            "⚠ Nombre muy corto\n\n"
-            "Debe tener al menos 2 caracteres:"
+            f"⚠ Nombre inválido\n\n"
+            f"{result.error}"
         )
         return AGREGAR_ITEM
 
-    context.user_data['new_item'] = {'nombre': nombre}
+    context.user_data['new_item'] = {'nombre': result.sanitized}
 
     await update.message.reply_text(
-        f"📦 Producto: {nombre}\n\n"
+        f"📦 Producto: {result.sanitized}\n\n"
         "🔢 Escribe la cantidad:"
     )
     return AGREGAR_ITEM_CANTIDAD
@@ -999,12 +1089,19 @@ async def agregar_item_cantidad(update: Update, context: ContextTypes.DEFAULT_TY
     """Recibe cantidad del nuevo item."""
     try:
         cantidad = int(update.message.text.strip())
-        if cantidad < 1:
-            raise ValueError()
     except ValueError:
         await update.message.reply_text(
             "⚠ Cantidad inválida\n\n"
-            "Escribe un número mayor a 0:"
+            "Escribe solo números:"
+        )
+        return AGREGAR_ITEM_CANTIDAD
+
+    # Validar cantidad con validador centralizado
+    result = ProductValidator.validate_cantidad(cantidad)
+    if not result.valid:
+        await update.message.reply_text(
+            f"⚠ Cantidad inválida\n\n"
+            f"{result.error}"
         )
         return AGREGAR_ITEM_CANTIDAD
 
@@ -1022,16 +1119,14 @@ async def agregar_item_cantidad(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def agregar_item_precio(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recibe precio del nuevo item y lo agrega a la lista."""
-    try:
-        precio_str = update.message.text.strip()
-        precio_str = precio_str.replace('$', '').replace(',', '').replace('.', '')
-        precio = float(precio_str)
-        if precio < 0:
-            raise ValueError()
-    except ValueError:
+    precio_str = update.message.text.strip()
+
+    # Parsear y validar precio con validador centralizado
+    success, precio, error = ProductValidator.parse_precio(precio_str)
+    if not success:
         await update.message.reply_text(
-            "⚠ Precio inválido\n\n"
-            "Escribe solo números:"
+            f"⚠ Precio inválido\n\n"
+            f"{error}"
         )
         return AGREGAR_ITEM_PRECIO
 

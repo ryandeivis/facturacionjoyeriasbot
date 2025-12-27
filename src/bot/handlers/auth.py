@@ -14,8 +14,17 @@ from telegram.ext import (
     filters
 )
 
-from src.utils.logger import get_logger
+from src.utils.logger import (
+    get_logger,
+    bind_context,
+    clear_context,
+    new_correlation_id,
+    audit_logger,
+)
 from src.utils.crypto import verify_password
+from src.utils.validators import IdentityValidator
+from src.utils.errors import handle_errors, DatabaseError, AuthenticationError
+from src.utils.rate_limiter import check_login_rate
 from src.database.connection import get_db, init_db, create_tables
 from src.database.queries.user_queries import get_user_by_cedula, update_last_login
 from src.database.queries.invoice_queries import get_invoices_by_vendedor
@@ -71,67 +80,95 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Comando /start - Inicio del bot"""
     user = update.effective_user
 
-    logger.info(f"Usuario Telegram {user.id} inició el bot")
+    # Iniciar contexto de logging para esta sesión
+    correlation_id = new_correlation_id()
+    context.user_data['_correlation_id'] = correlation_id
+
+    logger.info(f"Bot iniciado por Telegram user_id={user.id}")
 
     await update.message.reply_text(MENSAJES['bienvenida'])
 
     return CEDULA
 
 
+@handle_errors(notify_user=False, default_return=ConversationHandler.END)
 async def recibir_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recibe y valida la cédula"""
-    cedula = update.message.text.strip()
+    user_telegram_id = update.effective_user.id
 
-    # Validar que solo contenga números
-    if not cedula.isdigit():
+    # Rate limit: protección contra fuerza bruta
+    allowed, rate_message = check_login_rate(user_telegram_id)
+    if not allowed:
+        await update.message.reply_text(rate_message)
+        return ConversationHandler.END
+
+    cedula_raw = update.message.text.strip()
+
+    # Validar cédula con validador centralizado
+    result = IdentityValidator.validate_cedula(cedula_raw)
+    if not result.valid:
         await update.message.reply_text(
-            "⚠ Cédula inválida\n\n"
-            "Solo se permiten números.\n"
+            f"⚠ Cédula inválida\n\n"
+            f"{result.error}\n"
             "Ingresa tu cédula nuevamente:"
         )
         return CEDULA
 
+    cedula = result.sanitized
+
     # Buscar usuario en base de datos
+    db = next(get_db())
     try:
-        db = next(get_db())
         usuario = get_user_by_cedula(db, cedula)
+    except Exception as e:
+        raise DatabaseError(f"Error buscando usuario: {e}", original_error=e)
+    finally:
         db.close()
 
-        if not usuario:
-            await update.message.reply_text(MENSAJES['usuario_no_encontrado'])
-            logger.warning(f"Intento de login con cédula inexistente: {cedula}")
-            return ConversationHandler.END
-
-        if not usuario.activo:
-            await update.message.reply_text(MENSAJES['usuario_inactivo'])
-            logger.warning(f"Intento de login en usuario inactivo: {cedula}")
-            return ConversationHandler.END
-
-        # Guardar datos en contexto
-        context.user_data['cedula'] = cedula
-        context.user_data['user_id'] = usuario.id
-        context.user_data['nombre'] = usuario.nombre_completo
-        context.user_data['rol'] = usuario.rol
-        context.user_data['password_hash'] = usuario.password_hash
-        context.user_data['organization_id'] = usuario.organization_id
-
-        await update.message.reply_text(
-            f"👋 Hola, {usuario.nombre_completo}\n\n"
-            "🔐 Ingresa tu contraseña:"
+    if not usuario:
+        await update.message.reply_text(MENSAJES['usuario_no_encontrado'])
+        # Audit: intento de login fallido
+        audit_logger.log(
+            action="login_attempt",
+            status="failure",
+            details={"reason": "usuario_no_existe", "cedula_hash": cedula[:3] + "***"}
         )
-
-        return PASSWORD
-
-    except Exception as e:
-        logger.error(f"Error al buscar usuario: {e}")
-        await update.message.reply_text(MENSAJES['error_conexion'])
         return ConversationHandler.END
+
+    if not usuario.activo:
+        await update.message.reply_text(MENSAJES['usuario_inactivo'])
+        # Audit: usuario inactivo
+        audit_logger.log(
+            action="login_attempt",
+            user_id=str(usuario.id),
+            org_id=str(usuario.organization_id),
+            status="failure",
+            details={"reason": "usuario_inactivo"}
+        )
+        return ConversationHandler.END
+
+    # Guardar datos en contexto
+    context.user_data['cedula'] = cedula
+    context.user_data['user_id'] = usuario.id
+    context.user_data['nombre'] = usuario.nombre_completo
+    context.user_data['rol'] = usuario.rol
+    context.user_data['password_hash'] = usuario.password_hash
+    context.user_data['organization_id'] = usuario.organization_id
+
+    await update.message.reply_text(
+        f"👋 Hola, {usuario.nombre_completo}\n\n"
+        "🔐 Ingresa tu contraseña:"
+    )
+
+    return PASSWORD
 
 
 async def recibir_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recibe y valida la contraseña"""
     password = update.message.text
     cedula = context.user_data.get('cedula')
+    user_id = context.user_data.get('user_id')
+    org_id = context.user_data.get('organization_id')
     password_hash = context.user_data.get('password_hash')
 
     # Borrar mensaje con password por seguridad
@@ -143,7 +180,14 @@ async def recibir_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Verificar contraseña
     if not verify_password(password, password_hash):
         await update.message.reply_text(MENSAJES['password_incorrecta'])
-        logger.warning(f"Contraseña incorrecta para usuario: {cedula}")
+        # Audit: password incorrecta
+        audit_logger.log(
+            action="login_attempt",
+            user_id=str(user_id),
+            org_id=str(org_id),
+            status="failure",
+            details={"reason": "password_incorrecta"}
+        )
         limpiar_sesion(context)
         return ConversationHandler.END
 
@@ -155,7 +199,17 @@ async def recibir_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except Exception as e:
         logger.error(f"Error al actualizar último login: {e}")
 
-    logger.info(f"Login exitoso: {cedula}")
+    # Establecer contexto de logging para toda la sesión
+    bind_context(
+        correlation_id=context.user_data.get('_correlation_id'),
+        org_id=str(org_id),
+        user_id=str(user_id)
+    )
+
+    # Audit: login exitoso
+    audit_logger.login(user_id=str(user_id), org_id=str(org_id), success=True)
+
+    logger.info(f"Login exitoso: cedula={cedula[:3]}***")
 
     context.user_data['autenticado'] = True
 
@@ -230,44 +284,41 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     return MENU_PRINCIPAL
 
 
+@handle_errors(user_message="⚠ Error al obtener facturas\n\nPor favor, intenta más tarde.")
 async def mostrar_mis_facturas(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Muestra las facturas del vendedor actual"""
     user_id = context.user_data.get('user_id')
     org_id = context.user_data.get('organization_id')
 
+    db = next(get_db())
     try:
-        db = next(get_db())
         facturas = get_invoices_by_vendedor(db, user_id, org_id, limit=10)
+    except Exception as e:
+        raise DatabaseError(f"Error obteniendo facturas: {e}", original_error=e)
+    finally:
         db.close()
 
-        if not facturas:
-            await update.message.reply_text(
-                "📋 MIS FACTURAS\n"
-                "━━━━━━━━━━━━━━━\n\n"
-                "Aún no tienes facturas registradas."
-            )
-            return
-
-        mensaje = "📋 MIS FACTURAS\n"
-        mensaje += "━━━━━━━━━━━━━━━━━━━━\n"
-        mensaje += "Últimas 10 facturas\n\n"
-
-        for f in facturas:
-            estado_formatted = format_invoice_status(f.estado)
-            mensaje += f"{estado_formatted}\n"
-            mensaje += f"   📄 No: {f.numero_factura}\n"
-            mensaje += f"   👤 {f.cliente_nombre}\n"
-            mensaje += f"   💰 {format_currency(f.total)}\n"
-            mensaje += f"   📅 {f.created_at.strftime('%d/%m/%Y')}\n\n"
-
-        await update.message.reply_text(mensaje)
-
-    except Exception as e:
-        logger.error(f"Error obteniendo facturas: {e}")
+    if not facturas:
         await update.message.reply_text(
-            "⚠ Error al obtener facturas\n\n"
-            "Por favor, intenta más tarde."
+            "📋 MIS FACTURAS\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "Aún no tienes facturas registradas."
         )
+        return
+
+    mensaje = "📋 MIS FACTURAS\n"
+    mensaje += "━━━━━━━━━━━━━━━━━━━━\n"
+    mensaje += "Últimas 10 facturas\n\n"
+
+    for f in facturas:
+        estado_formatted = format_invoice_status(f.estado)
+        mensaje += f"{estado_formatted}\n"
+        mensaje += f"   📄 No: {f.numero_factura}\n"
+        mensaje += f"   👤 {f.cliente_nombre}\n"
+        mensaje += f"   💰 {format_currency(f.total)}\n"
+        mensaje += f"   📅 {f.created_at.strftime('%d/%m/%Y')}\n\n"
+
+    await update.message.reply_text(mensaje)
 
 
 async def cancelar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

@@ -324,22 +324,62 @@ try:
 
     health_router = APIRouter(prefix="/health", tags=["health"])
 
-    @health_router.get("")
+    @health_router.get(
+        "",
+        summary="Health check completo",
+        description="Verifica el estado de todos los componentes del sistema",
+        responses={
+            200: {"description": "Sistema saludable"},
+            503: {"description": "Sistema no saludable"}
+        }
+    )
     async def health_check():
-        """Health check completo."""
+        """
+        Health check completo del sistema.
+
+        Verifica:
+        - Base de datos
+        - Conexión a N8N
+        - API de Telegram
+
+        Returns:
+            Estado de salud de cada componente y estado general
+        """
         checker = get_health_checker()
         result = await checker.check_all()
         return result.to_dict()
 
-    @health_router.get("/live")
+    @health_router.get(
+        "/live",
+        summary="Liveness probe",
+        description="Verifica que la aplicación está viva (Kubernetes)"
+    )
     async def liveness_check():
-        """Liveness probe para Kubernetes."""
+        """
+        Liveness probe para Kubernetes.
+
+        Solo verifica que la aplicación está corriendo.
+        No verifica dependencias externas.
+        """
         checker = get_health_checker()
         return await checker.liveness()
 
-    @health_router.get("/ready")
+    @health_router.get(
+        "/ready",
+        summary="Readiness probe",
+        description="Verifica que la aplicación puede recibir tráfico",
+        responses={
+            200: {"description": "Aplicación lista"},
+            503: {"description": "Aplicación no lista"}
+        }
+    )
     async def readiness_check(response: Response):
-        """Readiness probe para Kubernetes."""
+        """
+        Readiness probe para Kubernetes.
+
+        Verifica que la aplicación puede recibir tráfico.
+        Requiere conexión a base de datos.
+        """
         checker = get_health_checker()
         result = await checker.readiness()
 

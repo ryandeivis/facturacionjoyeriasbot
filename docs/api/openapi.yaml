@@ -1,0 +1,859 @@
+openapi: 3.0.3
+info:
+  title: Jewelry Invoice Bot API
+  description: |
+    API REST para el sistema de facturación de joyerías.
+
+    ## Características
+
+    - **Multi-tenant**: Soporte para múltiples organizaciones
+    - **Autenticación**: Via API Key o JWT
+    - **Rate Limiting**: Límites por plan de suscripción
+    - **Validación**: Validación estricta de datos de entrada
+
+    ## Autenticación
+
+    La API utiliza el header `X-Organization-ID` para identificar la organización.
+    En producción, también se requiere autenticación via API Key o JWT.
+
+    ```
+    X-Organization-ID: org-xyz-123
+    Authorization: Bearer <token>
+    ```
+
+    ## Rate Limits
+
+    | Plan       | Requests/min | Facturas/mes |
+    |------------|--------------|--------------|
+    | Basic      | 60           | 100          |
+    | Pro        | 300          | 500          |
+    | Enterprise | 1000         | Ilimitado    |
+
+    ## Errores
+
+    La API retorna errores en formato JSON estándar:
+
+    ```json
+    {
+      "error": "ValidationError",
+      "message": "Descripción del error",
+      "status_code": 400
+    }
+    ```
+
+  version: 1.0.0
+  contact:
+    name: Soporte Técnico
+    email: soporte@joyeriainvoice.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8000
+    description: Servidor de desarrollo
+  - url: https://api.joyeriainvoice.com
+    description: Servidor de producción
+
+tags:
+  - name: health
+    description: Health checks y estado del sistema
+  - name: metrics
+    description: Métricas de la aplicación
+  - name: organizations
+    description: Gestión de organizaciones (tenants)
+  - name: invoices
+    description: Gestión de facturas
+  - name: users
+    description: Gestión de usuarios
+
+paths:
+  /:
+    get:
+      summary: Información de la API
+      description: Retorna información básica de la API
+      operationId: getRoot
+      responses:
+        '200':
+          description: Información de la API
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIInfo'
+
+  /health:
+    get:
+      tags:
+        - health
+      summary: Health check del sistema
+      description: Verifica el estado de todos los componentes del sistema
+      operationId: getHealth
+      responses:
+        '200':
+          description: Sistema saludable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Sistema no saludable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /health/live:
+    get:
+      tags:
+        - health
+      summary: Liveness check
+      description: Verifica que la aplicación está viva (para Kubernetes)
+      operationId: getLiveness
+      responses:
+        '200':
+          description: Aplicación viva
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "alive"
+
+  /health/ready:
+    get:
+      tags:
+        - health
+      summary: Readiness check
+      description: Verifica que la aplicación está lista para recibir tráfico
+      operationId: getReadiness
+      responses:
+        '200':
+          description: Aplicación lista
+        '503':
+          description: Aplicación no lista
+
+  /metrics:
+    get:
+      tags:
+        - metrics
+      summary: Métricas Prometheus
+      description: Retorna métricas en formato Prometheus
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Métricas en formato Prometheus
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # HELP requests_total Total de requests
+                  # TYPE requests_total counter
+                  requests_total{method="GET"} 1234
+
+  /api/v1/organizations:
+    get:
+      tags:
+        - organizations
+      summary: Listar organizaciones
+      description: Retorna lista paginada de organizaciones
+      operationId: listOrganizations
+      parameters:
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/OffsetParam'
+        - name: include_inactive
+          in: query
+          description: Incluir organizaciones inactivas
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Lista de organizaciones
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrganizationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - organizations
+      summary: Crear organización
+      description: Crea una nueva organización (tenant)
+      operationId: createOrganization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationCreate'
+      responses:
+        '201':
+          description: Organización creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/organizations/{org_id}:
+    get:
+      tags:
+        - organizations
+      summary: Obtener organización
+      description: Retorna detalles de una organización
+      operationId: getOrganization
+      parameters:
+        - $ref: '#/components/parameters/OrgIdPath'
+      responses:
+        '200':
+          description: Detalles de la organización
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    patch:
+      tags:
+        - organizations
+      summary: Actualizar organización
+      description: Actualiza datos de una organización
+      operationId: updateOrganization
+      parameters:
+        - $ref: '#/components/parameters/OrgIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrganizationUpdate'
+      responses:
+        '200':
+          description: Organización actualizada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/organizations/{org_id}/stats:
+    get:
+      tags:
+        - organizations
+      summary: Estadísticas de organización
+      description: Retorna estadísticas de facturación de la organización
+      operationId: getOrganizationStats
+      parameters:
+        - $ref: '#/components/parameters/OrgIdPath'
+      responses:
+        '200':
+          description: Estadísticas de la organización
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationStats'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/invoices:
+    get:
+      tags:
+        - invoices
+      summary: Listar facturas
+      description: Retorna lista paginada de facturas de la organización
+      operationId: listInvoices
+      parameters:
+        - $ref: '#/components/parameters/OrgIdHeader'
+        - $ref: '#/components/parameters/LimitParam'
+        - $ref: '#/components/parameters/OffsetParam'
+        - name: status
+          in: query
+          description: Filtrar por estado
+          schema:
+            $ref: '#/components/schemas/InvoiceStatus'
+      responses:
+        '200':
+          description: Lista de facturas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InvoiceListItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - invoices
+      summary: Crear factura
+      description: Crea una nueva factura
+      operationId: createInvoice
+      parameters:
+        - $ref: '#/components/parameters/OrgIdHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceCreate'
+      responses:
+        '201':
+          description: Factura creada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/invoices/{invoice_id}:
+    get:
+      tags:
+        - invoices
+      summary: Obtener factura
+      description: Retorna detalles de una factura
+      operationId: getInvoice
+      parameters:
+        - $ref: '#/components/parameters/OrgIdHeader'
+        - $ref: '#/components/parameters/InvoiceIdPath'
+      responses:
+        '200':
+          description: Detalles de la factura
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags:
+        - invoices
+      summary: Eliminar factura
+      description: Elimina una factura (soft delete)
+      operationId: deleteInvoice
+      parameters:
+        - $ref: '#/components/parameters/OrgIdHeader'
+        - $ref: '#/components/parameters/InvoiceIdPath'
+      responses:
+        '200':
+          description: Factura eliminada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "deleted"
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/invoices/{invoice_id}/status:
+    patch:
+      tags:
+        - invoices
+      summary: Actualizar estado de factura
+      description: Cambia el estado de una factura
+      operationId: updateInvoiceStatus
+      parameters:
+        - $ref: '#/components/parameters/OrgIdHeader'
+        - $ref: '#/components/parameters/InvoiceIdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvoiceStatusUpdate'
+      responses:
+        '200':
+          description: Estado actualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "updated"
+                  new_status:
+                    $ref: '#/components/schemas/InvoiceStatus'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/invoices/by-number/{numero_factura}:
+    get:
+      tags:
+        - invoices
+      summary: Buscar factura por número
+      description: Busca una factura por su número
+      operationId: getInvoiceByNumber
+      parameters:
+        - $ref: '#/components/parameters/OrgIdHeader'
+        - name: numero_factura
+          in: path
+          required: true
+          description: Número de factura
+          schema:
+            type: string
+            example: "FAC-202401-0001"
+      responses:
+        '200':
+          description: Factura encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    OrgIdHeader:
+      name: X-Organization-ID
+      in: header
+      required: true
+      description: ID de la organización
+      schema:
+        type: string
+        example: "org-xyz-123"
+
+    OrgIdPath:
+      name: org_id
+      in: path
+      required: true
+      description: ID de la organización
+      schema:
+        type: string
+
+    InvoiceIdPath:
+      name: invoice_id
+      in: path
+      required: true
+      description: ID de la factura
+      schema:
+        type: string
+
+    LimitParam:
+      name: limit
+      in: query
+      description: Número máximo de resultados
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+
+    OffsetParam:
+      name: offset
+      in: query
+      description: Número de resultados a saltar
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+  schemas:
+    APIInfo:
+      type: object
+      properties:
+        name:
+          type: string
+          example: "Jewelry Invoice Bot API"
+        version:
+          type: string
+          example: "1.0.0"
+        status:
+          type: string
+          example: "running"
+        docs:
+          type: string
+          nullable: true
+          example: "/docs"
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        version:
+          type: string
+        uptime_seconds:
+          type: number
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComponentHealth'
+        checked_at:
+          type: string
+          format: date-time
+
+    ComponentHealth:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        message:
+          type: string
+        latency_ms:
+          type: number
+        checked_at:
+          type: string
+          format: date-time
+
+    InvoiceStatus:
+      type: string
+      enum:
+        - BORRADOR
+        - PENDIENTE
+        - PAGADA
+        - ANULADA
+
+    PlanType:
+      type: string
+      enum:
+        - basic
+        - pro
+        - enterprise
+
+    InvoiceItem:
+      type: object
+      required:
+        - descripcion
+        - cantidad
+        - precio_unitario
+      properties:
+        descripcion:
+          type: string
+          minLength: 2
+          maxLength: 200
+          example: "Anillo Oro 18K"
+        cantidad:
+          type: integer
+          minimum: 1
+          maximum: 9999
+          example: 1
+        precio_unitario:
+          type: number
+          minimum: 0
+          example: 500000
+        subtotal:
+          type: number
+          example: 500000
+
+    InvoiceCreate:
+      type: object
+      required:
+        - cliente_nombre
+        - items
+      properties:
+        cliente_nombre:
+          type: string
+          minLength: 3
+          maxLength: 100
+          example: "Juan Pérez"
+        cliente_cedula:
+          type: string
+          minLength: 6
+          maxLength: 12
+          example: "12345678"
+        cliente_telefono:
+          type: string
+          maxLength: 20
+          example: "3001234567"
+        cliente_direccion:
+          type: string
+          maxLength: 200
+        cliente_email:
+          type: string
+          format: email
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/InvoiceItem'
+        notas:
+          type: string
+          maxLength: 500
+
+    InvoiceStatusUpdate:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: '#/components/schemas/InvoiceStatus'
+
+    InvoiceListItem:
+      type: object
+      properties:
+        id:
+          type: string
+        numero_factura:
+          type: string
+        cliente_nombre:
+          type: string
+        cliente_cedula:
+          type: string
+        subtotal:
+          type: number
+        impuestos:
+          type: number
+        total:
+          type: number
+        estado:
+          $ref: '#/components/schemas/InvoiceStatus'
+        created_at:
+          type: string
+          format: date-time
+
+    InvoiceResponse:
+      allOf:
+        - $ref: '#/components/schemas/InvoiceListItem'
+        - type: object
+          properties:
+            organization_id:
+              type: string
+            cliente_telefono:
+              type: string
+            cliente_direccion:
+              type: string
+            cliente_email:
+              type: string
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/InvoiceItem'
+            descuento:
+              type: number
+            vendedor_id:
+              type: integer
+            vendedor_nombre:
+              type: string
+            notas:
+              type: string
+            updated_at:
+              type: string
+              format: date-time
+
+    OrganizationCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: "Joyería El Diamante"
+        plan:
+          $ref: '#/components/schemas/PlanType'
+        invoice_prefix:
+          type: string
+          maxLength: 10
+          default: "FAC"
+          example: "JOY"
+        owner_email:
+          type: string
+          format: email
+
+    OrganizationUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        plan:
+          $ref: '#/components/schemas/PlanType'
+        invoice_prefix:
+          type: string
+          maxLength: 10
+        is_active:
+          type: boolean
+
+    OrganizationResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        plan:
+          $ref: '#/components/schemas/PlanType'
+        invoice_prefix:
+          type: string
+        is_active:
+          type: boolean
+        users_count:
+          type: integer
+        invoices_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        plan_limits:
+          $ref: '#/components/schemas/PlanLimits'
+
+    PlanLimits:
+      type: object
+      properties:
+        invoices_per_month:
+          type: integer
+        users_per_org:
+          type: integer
+        max_items_per_invoice:
+          type: integer
+        features:
+          type: object
+          properties:
+            ai_extraction:
+              type: boolean
+            voice_input:
+              type: boolean
+            photo_input:
+              type: boolean
+            custom_templates:
+              type: boolean
+            api_access:
+              type: boolean
+
+    OrganizationStats:
+      type: object
+      properties:
+        organization_id:
+          type: string
+        total_invoices:
+          type: integer
+        invoices_this_month:
+          type: integer
+        total_revenue:
+          type: number
+        revenue_this_month:
+          type: number
+        pending_invoices:
+          type: integer
+        pending_amount:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+        - status_code
+      properties:
+        error:
+          type: string
+          example: "NotFound"
+        message:
+          type: string
+          example: "Recurso no encontrado"
+        status_code:
+          type: integer
+          example: 404
+        timestamp:
+          type: string
+          format: date-time
+        details:
+          type: object
+
+  responses:
+    BadRequest:
+      description: Datos de entrada inválidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "ValidationError"
+            message: "El campo 'cliente_nombre' es requerido"
+            status_code: 400
+
+    Unauthorized:
+      description: No autorizado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "Unauthorized"
+            message: "Token de autenticación requerido"
+            status_code: 401
+
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "NotFound"
+            message: "Factura no encontrada"
+            status_code: 404
+
+    RateLimited:
+      description: Rate limit excedido
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "RateLimitExceeded"
+            message: "Has excedido el límite de requests. Intenta de nuevo en 60 segundos."
+            status_code: 429
+      headers:
+        X-RateLimit-Limit:
+          description: Límite de requests por ventana
+          schema:
+            type: integer
+        X-RateLimit-Remaining:
+          description: Requests restantes
+          schema:
+            type: integer
+        X-RateLimit-Reset:
+          description: Segundos hasta reset
+          schema:
+            type: integer
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API Key de la organización
+
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT de autenticación
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []

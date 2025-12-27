@@ -63,11 +63,49 @@ class AuditAction(str, Enum):
     USUARIO_CREADO = "USUARIO_CREADO"
 
 
-# Validaciones
-PASSWORD_MIN_LENGTH = 8
-CEDULA_MIN_LENGTH = 7
-CEDULA_MAX_LENGTH = 15
+# ============================================================================
+# VALIDACIONES
+# ============================================================================
 
-# Formatos
+# Autenticación
+PASSWORD_MIN_LENGTH = 8
+
+# Cédula
+CEDULA_MIN_LENGTH = 6
+CEDULA_MAX_LENGTH = 12
+
+# Nombres
+NOMBRE_MIN_LENGTH = 3
+NOMBRE_MAX_LENGTH = 100
+NOMBRE_PRODUCTO_MIN = 2
+NOMBRE_PRODUCTO_MAX = 150
+
+# Precios y cantidades
+PRECIO_MIN = 0
+PRECIO_MAX = 999_999_999  # ~1 billón COP
+CANTIDAD_MIN = 1
+CANTIDAD_MAX = 9999
+
+# Factura
+MAX_ITEMS_PER_INVOICE = 50
+MAX_INVOICE_TOTAL = 9_999_999_999
+
+# Contacto
+TELEFONO_MIN_LENGTH = 7
+TELEFONO_MAX_LENGTH = 15
+EMAIL_MAX_LENGTH = 254
+DIRECCION_MAX_LENGTH = 200
+
+# Texto general
+TEXT_MAX_LENGTH = 1000
+
+# Archivos
+MAX_FILE_SIZE_MB = 10
+MAX_VOICE_DURATION_SECONDS = 300  # 5 minutos
+
+# ============================================================================
+# FORMATOS
+# ============================================================================
+
 DATE_FORMAT = "%d/%m/%Y"
 DATETIME_FORMAT = "%d/%m/%Y %H:%M:%S"

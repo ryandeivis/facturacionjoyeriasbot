@@ -4,6 +4,8 @@ Utilidades del Sistema
 Módulo que exporta todas las utilidades:
 - Logger: Logging estructurado con contexto
 - Crypto: Passwords, JWT, PII encryption, sanitización
+- Validators: Validación centralizada de entrada
+- Errors: Manejo centralizado de errores
 - Metrics: Contadores, gauges, histogramas, Prometheus
 - Health: Health checks unificados
 """
@@ -36,6 +38,27 @@ from src.utils.crypto import (
     get_crypto_service,
 )
 
+# Validators
+from src.utils.validators import (
+    ValidationResult,
+    ValidationLimits,
+    IdentityValidator,
+    ContactValidator,
+    ProductValidator,
+    InvoiceValidator,
+    FileValidator,
+    ValidationService,
+    get_validation_service,
+    get_tenant_validation_service,
+    # Funciones de conveniencia
+    validar_cedula,
+    validar_nombre,
+    validar_precio,
+    validar_cantidad,
+    validar_email,
+    parsear_precio,
+)
+
 # Metrics
 from src.utils.metrics import (
     Counter,
@@ -60,6 +83,26 @@ from src.utils.metrics import (
     bot_messages,
 )
 
+# Errors
+from src.utils.errors import (
+    ErrorCategory,
+    ErrorSeverity,
+    ErrorContext,
+    BotError,
+    ValidationError,
+    DatabaseError,
+    ExternalAPIError,
+    AuthenticationError,
+    AuthorizationError,
+    BusinessError,
+    FileError,
+    handle_errors,
+    wrap_external_error,
+    wrap_database_error,
+    ErrorRegistry,
+    error_registry,
+)
+
 # Health Checks
 from src.utils.health_check import (
     HealthStatus,
@@ -72,6 +115,18 @@ from src.utils.health_check import (
     is_healthy,
     get_readiness,
     get_liveness,
+)
+
+# Rate Limiting
+from src.utils.rate_limiter import (
+    OperationType,
+    RateLimitConfig,
+    RateLimiter,
+    rate_limiter,
+    check_login_rate,
+    check_n8n_rate,
+    check_invoice_rate,
+    check_message_rate,
 )
 
 __all__ = [
@@ -97,6 +152,23 @@ __all__ = [
     "InputSanitizer",
     "CryptoService",
     "get_crypto_service",
+    # Validators
+    "ValidationResult",
+    "ValidationLimits",
+    "IdentityValidator",
+    "ContactValidator",
+    "ProductValidator",
+    "InvoiceValidator",
+    "FileValidator",
+    "ValidationService",
+    "get_validation_service",
+    "get_tenant_validation_service",
+    "validar_cedula",
+    "validar_nombre",
+    "validar_precio",
+    "validar_cantidad",
+    "validar_email",
+    "parsear_precio",
     # Metrics
     "Counter",
     "Gauge",
@@ -117,6 +189,23 @@ __all__ = [
     "db_queries",
     "errors",
     "bot_messages",
+    # Errors
+    "ErrorCategory",
+    "ErrorSeverity",
+    "ErrorContext",
+    "BotError",
+    "ValidationError",
+    "DatabaseError",
+    "ExternalAPIError",
+    "AuthenticationError",
+    "AuthorizationError",
+    "BusinessError",
+    "FileError",
+    "handle_errors",
+    "wrap_external_error",
+    "wrap_database_error",
+    "ErrorRegistry",
+    "error_registry",
     # Health
     "HealthStatus",
     "ComponentHealth",
@@ -128,4 +217,13 @@ __all__ = [
     "is_healthy",
     "get_readiness",
     "get_liveness",
+    # Rate Limiting
+    "OperationType",
+    "RateLimitConfig",
+    "RateLimiter",
+    "rate_limiter",
+    "check_login_rate",
+    "check_n8n_rate",
+    "check_invoice_rate",
+    "check_message_rate",
 ]

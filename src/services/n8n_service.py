@@ -31,6 +31,7 @@ from enum import Enum
 
 from config.settings import settings
 from src.utils.logger import get_logger
+from src.utils.rate_limiter import check_n8n_rate
 from src.models.invoice import N8NResponse, N8NPDFResponse
 from src.services.http_client import ResilientHTTPClient, CircuitBreakerOpen
 
@@ -299,6 +300,16 @@ class N8NService:
         Returns:
             N8NResponse con datos extraídos
         """
+        # Rate limiting por organización
+        org_id = payload.get("organization_id", "default")
+        allowed, rate_message = check_n8n_rate(org_id)
+        if not allowed:
+            logger.warning(f"Rate limit n8n excedido para org={org_id}")
+            return N8NResponse(
+                success=False,
+                error=rate_message
+            )
+
         if not self.extract_webhook_url:
             logger.warning("N8N_WEBHOOK_URL no está configurado")
             return N8NResponse(
