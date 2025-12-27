@@ -6,7 +6,7 @@ Prueba collectors, aggregators y business metrics service.
 
 import pytest
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from src.metrics.collectors import (
     MetricsCollector,
@@ -278,19 +278,28 @@ class TestBusinessMetricsService:
     @pytest.fixture
     def mock_collector(self):
         """Crea collector mock."""
+        # Crear un contador real con datos
+        invoice_counter = MetricCounter()
+        invoice_counter.increment(value=500.0, success=True)
+
+        photo_counter = MetricCounter()
+        photo_counter.increment(success=True)
+
         collector = AsyncMock(spec=MetricsCollector)
         collector.get_organization_counters = AsyncMock(return_value={
-            EventType.INVOICE_CREATED.value: MetricCounter(),
-            EventType.BOT_PHOTO.value: MetricCounter(),
+            EventType.INVOICE_CREATED.value: invoice_counter,
+            EventType.BOT_PHOTO.value: photo_counter,
         })
         collector.get_global_counters = AsyncMock(return_value={
-            EventType.INVOICE_CREATED.value: MetricCounter(),
+            EventType.INVOICE_CREATED.value: invoice_counter,
         })
         collector.get_events = AsyncMock(return_value=[])
         collector.get_summary = AsyncMock(return_value={
             "events_in_memory": 100,
             "organizations_tracked": 5,
         })
+        # Mock para BD (aunque no se use en estos tests)
+        collector.get_organization_summary_from_db = Mock(return_value={})
         return collector
 
     @pytest.fixture
@@ -463,24 +472,29 @@ class TestMetricsIntegration:
     @pytest.mark.asyncio
     async def test_full_flow(self):
         """Test flujo completo de métricas."""
-        collector = MetricsCollector(max_events=1000)
+        # Usar un ID de org único para evitar conflictos con otros tests
+        import uuid
+        org_id = f"test-org-{uuid.uuid4().hex[:8]}"
+
+        # Crear nuevo collector para evitar datos residuales de otros tests
+        collector = MetricsCollector(max_events=1000, persist_to_db=False)
         tracker = MetricsTracker(collector=collector)
         service = BusinessMetricsService(collector=collector)
 
         # Simular actividad
         await tracker.track_invoice_created(
-            organization_id="org-123",
+            organization_id=org_id,
             amount=500000.0,
             user_id=1,
         )
         await tracker.track_bot_photo(
-            organization_id="org-123",
+            organization_id=org_id,
             user_id=1,
             success=True,
             duration_ms=150.0,
         )
         await tracker.track_ai_extraction(
-            organization_id="org-123",
+            organization_id=org_id,
             user_id=1,
             extraction_type="photo",
             success=True,
@@ -488,8 +502,12 @@ class TestMetricsIntegration:
             items_extracted=3,
         )
 
-        # Verificar métricas
-        org_metrics = await service.get_organization_metrics("org-123")
+        # Verificar métricas (forzar uso de memoria, no BD)
+        from src.metrics.business import DataSource
+        org_metrics = await service.get_organization_metrics(
+            org_id,
+            source=DataSource.MEMORY
+        )
 
         assert org_metrics.invoices.total_created == 1
         assert org_metrics.invoices.total_amount == 500000.0

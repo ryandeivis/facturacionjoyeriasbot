@@ -3,19 +3,29 @@ Metrics Collectors
 
 Recolecta y almacena eventos del sistema para análisis posterior.
 Diseñado para ser eficiente y no bloquear operaciones principales.
+
+Almacenamiento dual:
+- Memoria: Para consultas rápidas y tiempo real
+- Base de datos: Para persistencia y análisis histórico
 """
 
-import time
 import asyncio
 from enum import Enum
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
+
+# Thread pool para escrituras a BD sin bloquear
+_db_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="metrics_db")
+
+# Flag para habilitar/deshabilitar persistencia en BD
+_db_persistence_enabled = True
 
 
 # ============================================================================
@@ -146,6 +156,70 @@ class MetricCounter:
 
 
 # ============================================================================
+# DATABASE PERSISTENCE
+# ============================================================================
+
+def _persist_event_to_db(
+    event_type: str,
+    organization_id: Optional[str],
+    user_id: Optional[int],
+    value: float,
+    success: bool,
+    duration_ms: Optional[float],
+    metadata: Dict[str, Any],
+) -> None:
+    """
+    Persiste un evento en la base de datos (ejecutado en thread pool).
+
+    Esta función se ejecuta en un thread separado para no bloquear
+    el loop de asyncio principal.
+    """
+    if not _db_persistence_enabled:
+        return
+
+    try:
+        from src.database.connection import get_db
+        from src.database.queries.metrics_queries import create_metric_event
+
+        db = next(get_db())
+        try:
+            create_metric_event(
+                db=db,
+                event_type=event_type,
+                organization_id=organization_id,
+                user_id=user_id,
+                value=value,
+                success=success,
+                duration_ms=duration_ms,
+                metadata=metadata,
+            )
+        finally:
+            db.close()
+    except Exception as e:
+        # Log pero no falla - la persistencia es best-effort
+        logger.warning(f"Error persistiendo métrica en BD: {e}")
+
+
+def set_db_persistence(enabled: bool) -> None:
+    """
+    Habilita o deshabilita la persistencia en base de datos.
+
+    Útil para tests o cuando la BD no está disponible.
+
+    Args:
+        enabled: True para habilitar, False para deshabilitar
+    """
+    global _db_persistence_enabled
+    _db_persistence_enabled = enabled
+    logger.info(f"Persistencia de métricas en BD: {'habilitada' if enabled else 'deshabilitada'}")
+
+
+def is_db_persistence_enabled() -> bool:
+    """Retorna si la persistencia en BD está habilitada."""
+    return _db_persistence_enabled
+
+
+# ============================================================================
 # METRICS COLLECTOR
 # ============================================================================
 
@@ -154,12 +228,27 @@ class MetricsCollector:
     Recolector de métricas del sistema.
 
     Almacena eventos en memoria con ventanas de tiempo.
+    Opcionalmente persiste a base de datos de forma asíncrona.
     Thread-safe y optimizado para alta frecuencia de escritura.
     """
 
-    def __init__(self, max_events: int = 10000, retention_hours: int = 24):
+    def __init__(
+        self,
+        max_events: int = 10000,
+        retention_hours: int = 24,
+        persist_to_db: bool = True,
+    ):
+        """
+        Inicializa el collector.
+
+        Args:
+            max_events: Máximo de eventos a mantener en memoria
+            retention_hours: Horas de retención en memoria
+            persist_to_db: Si debe persistir eventos en base de datos
+        """
         self._max_events = max_events
         self._retention_hours = retention_hours
+        self._persist_to_db = persist_to_db
 
         # Eventos recientes (para análisis detallado)
         self._events: List[MetricEvent] = []
@@ -176,7 +265,10 @@ class MetricsCollector:
 
         self._started_at = datetime.utcnow()
 
-        logger.info("MetricsCollector inicializado")
+        logger.info(
+            f"MetricsCollector inicializado "
+            f"(persist_to_db={persist_to_db}, max_events={max_events})"
+        )
 
     async def collect(
         self,
@@ -190,6 +282,9 @@ class MetricsCollector:
     ):
         """
         Recolecta un evento métrico.
+
+        Almacena en memoria para acceso rápido y opcionalmente
+        persiste en base de datos para análisis histórico.
 
         Args:
             event_type: Tipo de evento
@@ -210,7 +305,7 @@ class MetricsCollector:
             success=success,
         )
 
-        # Agregar a eventos recientes
+        # 1. Agregar a eventos recientes (memoria)
         async with self._events_lock:
             self._events.append(event)
 
@@ -218,7 +313,7 @@ class MetricsCollector:
             if len(self._events) > self._max_events:
                 self._events = self._events[-self._max_events:]
 
-        # Actualizar contadores
+        # 2. Actualizar contadores (memoria)
         async with self._counters_lock:
             # Contador global
             self._global_counters[event_type.value].increment(
@@ -234,6 +329,21 @@ class MetricsCollector:
                     success=success,
                     duration_ms=duration_ms
                 )
+
+        # 3. Persistir en base de datos (asíncrono, no bloqueante)
+        if self._persist_to_db and _db_persistence_enabled:
+            loop = asyncio.get_event_loop()
+            loop.run_in_executor(
+                _db_executor,
+                _persist_event_to_db,
+                event_type.value,
+                organization_id,
+                user_id,
+                value,
+                success,
+                duration_ms,
+                metadata or {},
+            )
 
     async def get_events(
         self,
@@ -326,6 +436,164 @@ class MetricsCollector:
 
         if before != after:
             logger.info(f"Limpiados {before - after} eventos antiguos")
+
+    # =========================================================================
+    # DATABASE QUERY METHODS
+    # =========================================================================
+
+    def get_events_from_db(
+        self,
+        organization_id: Optional[str] = None,
+        event_type: Optional[str] = None,
+        since: Optional[datetime] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """
+        Obtiene eventos históricos desde la base de datos.
+
+        Args:
+            organization_id: Filtrar por organización
+            event_type: Filtrar por tipo de evento
+            since: Eventos desde esta fecha
+            limit: Máximo de eventos
+
+        Returns:
+            Lista de eventos como diccionarios
+        """
+        try:
+            from src.database.connection import get_db
+            from src.database.queries.metrics_queries import get_recent_events
+
+            db = next(get_db())
+            try:
+                events = get_recent_events(
+                    db=db,
+                    organization_id=organization_id,
+                    event_type=event_type,
+                    since=since,
+                    limit=limit,
+                )
+                return [
+                    {
+                        "id": e.id,
+                        "event_type": e.event_type,
+                        "organization_id": e.organization_id,
+                        "user_id": e.user_id,
+                        "value": e.value,
+                        "success": e.success,
+                        "duration_ms": e.duration_ms,
+                        "metadata": e.event_metadata,
+                        "created_at": e.created_at.isoformat(),
+                    }
+                    for e in events
+                ]
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error obteniendo eventos de BD: {e}")
+            return []
+
+    def get_aggregated_counts_from_db(
+        self,
+        organization_id: Optional[str] = None,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Obtiene conteos agregados desde la base de datos.
+
+        Args:
+            organization_id: Filtrar por organización
+            since: Desde esta fecha
+            until: Hasta esta fecha
+
+        Returns:
+            Diccionario con conteos por tipo de evento
+        """
+        try:
+            from src.database.connection import get_db
+            from src.database.queries.metrics_queries import get_event_counts
+
+            db = next(get_db())
+            try:
+                return get_event_counts(
+                    db=db,
+                    organization_id=organization_id,
+                    since=since,
+                    until=until,
+                )
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error obteniendo conteos de BD: {e}")
+            return {}
+
+    def get_daily_stats_from_db(
+        self,
+        organization_id: Optional[str] = None,
+        event_type: Optional[str] = None,
+        days: int = 30,
+    ) -> List[Dict[str, Any]]:
+        """
+        Obtiene estadísticas diarias desde la base de datos.
+
+        Args:
+            organization_id: Filtrar por organización
+            event_type: Filtrar por tipo de evento
+            days: Número de días hacia atrás
+
+        Returns:
+            Lista de estadísticas por día
+        """
+        try:
+            from src.database.connection import get_db
+            from src.database.queries.metrics_queries import get_daily_stats
+
+            db = next(get_db())
+            try:
+                return get_daily_stats(
+                    db=db,
+                    organization_id=organization_id,
+                    event_type=event_type,
+                    days=days,
+                )
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error obteniendo stats diarias de BD: {e}")
+            return []
+
+    def get_organization_summary_from_db(
+        self,
+        organization_id: str,
+        since: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """
+        Obtiene resumen de métricas de una organización desde BD.
+
+        Args:
+            organization_id: ID de la organización
+            since: Desde esta fecha
+
+        Returns:
+            Resumen de métricas
+        """
+        try:
+            from src.database.connection import get_db
+            from src.database.queries.metrics_queries import get_organization_summary
+
+            db = next(get_db())
+            try:
+                return get_organization_summary(
+                    db=db,
+                    organization_id=organization_id,
+                    since=since,
+                )
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error obteniendo resumen de BD: {e}")
+            return {}
 
 
 # ============================================================================

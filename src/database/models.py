@@ -266,3 +266,81 @@ class AuditLog(Base):
 
     def __repr__(self):
         return f"<AuditLog {self.accion} by {self.usuario_cedula}>"
+
+
+class MetricEvent(Base):
+    """
+    Evento de Métrica de Negocio.
+
+    Almacena eventos para análisis de métricas SaaS.
+    Diseñado para consultas de agregación eficientes.
+
+    Tipos de eventos:
+    - invoice.*: Eventos de facturación
+    - bot.*: Interacciones con el bot
+    - ai.*: Extracciones de IA
+    - user.*: Eventos de usuario
+    - org.*: Eventos de organización
+    - api.*: Eventos de API
+    """
+    __tablename__ = "metric_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Tipo de evento (invoice.created, bot.photo, ai.extraction, etc.)
+    event_type = Column(String(50), nullable=False, index=True)
+
+    # Multi-tenancy (opcional para métricas globales)
+    organization_id = Column(
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True
+    )
+
+    # Usuario que generó el evento
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # Valor numérico (ej: monto de factura, items extraídos)
+    value = Column(Float, default=0.0, nullable=False)
+
+    # Resultado de la operación
+    success = Column(Boolean, default=True, nullable=False)
+
+    # Duración en milisegundos
+    duration_ms = Column(Float, nullable=True)
+
+    # Metadata adicional (JSON) - Nota: 'metadata' es reservado en SQLAlchemy
+    event_metadata = Column(JSONType(), default=dict, nullable=False)
+
+    # Timestamp con índice para queries temporales
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+    # Índices compuestos para consultas frecuentes
+    __table_args__ = (
+        # Por org y tipo de evento (métricas por tenant)
+        Index('ix_metrics_org_type', 'organization_id', 'event_type'),
+        # Por org y fecha (series temporales)
+        Index('ix_metrics_org_date', 'organization_id', 'created_at'),
+        # Por tipo y fecha (agregaciones globales)
+        Index('ix_metrics_type_date', 'event_type', 'created_at'),
+        # Por org, tipo y fecha (consultas completas)
+        Index('ix_metrics_org_type_date', 'organization_id', 'event_type', 'created_at'),
+    )
+
+    def __repr__(self):
+        return f"<MetricEvent {self.event_type} org={self.organization_id}>"
+
+    def to_dict(self) -> dict:
+        """Serializa el evento a diccionario."""
+        return {
+            "id": self.id,
+            "event_type": self.event_type,
+            "organization_id": self.organization_id,
+            "user_id": self.user_id,
+            "value": self.value,
+            "success": self.success,
+            "duration_ms": self.duration_ms,
+            "metadata": self.metadata,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }

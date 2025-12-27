@@ -9,21 +9,31 @@ Componentes:
 - BusinessMetrics: Cálculos de métricas de negocio
 - Exporters: Exponen métricas (Prometheus, JSON)
 
+Almacenamiento:
+- Memoria: Para consultas rápidas (últimas 24h)
+- Base de datos: Para persistencia y análisis histórico
+
 Uso:
     from src.metrics import metrics_tracker, BusinessMetricsService
 
-    # Trackear evento
+    # Trackear evento (se guarda en memoria + BD automáticamente)
     await metrics_tracker.track_invoice_created(org_id, amount)
 
-    # Obtener métricas
+    # Obtener métricas (usa BD automáticamente si período > 24h)
     service = BusinessMetricsService()
     stats = await service.get_organization_metrics(org_id)
+
+    # Forzar uso de BD para análisis histórico
+    from src.metrics import DataSource
+    stats = await service.get_organization_metrics(org_id, source=DataSource.DATABASE)
 """
 
 from src.metrics.collectors import (
     MetricsCollector,
     get_metrics_collector,
     EventType,
+    set_db_persistence,
+    is_db_persistence_enabled,
 )
 
 from src.metrics.aggregators import (
@@ -38,6 +48,7 @@ from src.metrics.business import (
     OrganizationMetrics,
     ProductMetrics,
     UsageMetrics,
+    DataSource,
 )
 
 from src.metrics.tracker import (
@@ -51,6 +62,8 @@ __all__ = [
     "MetricsCollector",
     "get_metrics_collector",
     "EventType",
+    "set_db_persistence",
+    "is_db_persistence_enabled",
     # Aggregators
     "MetricsAggregator",
     "AggregationPeriod",
@@ -61,6 +74,7 @@ __all__ = [
     "OrganizationMetrics",
     "ProductMetrics",
     "UsageMetrics",
+    "DataSource",
     # Tracker
     "MetricsTracker",
     "get_metrics_tracker",

@@ -3,6 +3,10 @@ Business Metrics Service
 
 Servicio de métricas de negocio para análisis SaaS.
 Proporciona insights sobre organizaciones, productos y uso.
+
+Fuentes de datos:
+- Memoria: Para métricas en tiempo real (últimas 24h)
+- Base de datos: Para análisis histórico (configurable)
 """
 
 from datetime import datetime, timedelta
@@ -16,6 +20,7 @@ from src.metrics.collectors import (
     get_metrics_collector,
     EventType,
     MetricCounter,
+    is_db_persistence_enabled,
 )
 from src.metrics.aggregators import (
     MetricsAggregator,
@@ -242,6 +247,13 @@ class UsageMetrics:
 # BUSINESS METRICS SERVICE
 # ============================================================================
 
+class DataSource(str, Enum):
+    """Fuente de datos para métricas."""
+    MEMORY = "memory"       # Datos en memoria (tiempo real, últimas 24h)
+    DATABASE = "database"   # Datos históricos en BD
+    AUTO = "auto"           # Automático según el período
+
+
 class BusinessMetricsService:
     """
     Servicio de métricas de negocio.
@@ -250,6 +262,10 @@ class BusinessMetricsService:
     - Rendimiento por organización (tenant)
     - Salud del producto SaaS
     - Patrones de uso
+
+    Soporta dos fuentes de datos:
+    - Memoria: Para métricas en tiempo real
+    - Base de datos: Para análisis histórico
     """
 
     def __init__(
@@ -261,11 +277,39 @@ class BusinessMetricsService:
         self._aggregator = aggregator or get_metrics_aggregator()
         logger.info("BusinessMetricsService inicializado")
 
+    def _should_use_database(
+        self,
+        since: Optional[datetime],
+        source: DataSource = DataSource.AUTO,
+    ) -> bool:
+        """
+        Determina si debe usar la base de datos.
+
+        Args:
+            since: Inicio del período
+            source: Fuente preferida
+
+        Returns:
+            True si debe usar BD
+        """
+        if source == DataSource.DATABASE:
+            return is_db_persistence_enabled()
+        if source == DataSource.MEMORY:
+            return False
+
+        # AUTO: Usar BD si el período es mayor a 24h
+        if since is None:
+            return False
+
+        hours_ago = (datetime.utcnow() - since).total_seconds() / 3600
+        return hours_ago > 24 and is_db_persistence_enabled()
+
     async def get_organization_metrics(
         self,
         organization_id: str,
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
+        source: DataSource = DataSource.AUTO,
     ) -> OrganizationMetrics:
         """
         Obtiene métricas completas de una organización.
@@ -274,6 +318,7 @@ class BusinessMetricsService:
             organization_id: ID de la organización
             since: Inicio del período (default: últimos 30 días)
             until: Fin del período (default: ahora)
+            source: Fuente de datos (AUTO, MEMORY, DATABASE)
 
         Returns:
             Métricas de la organización
@@ -289,53 +334,92 @@ class BusinessMetricsService:
             period_end=until,
         )
 
-        # Obtener contadores de la organización
-        counters = await self._collector.get_organization_counters(organization_id)
+        use_db = self._should_use_database(since, source)
 
-        # Métricas de facturación
-        if EventType.INVOICE_CREATED.value in counters:
-            counter = counters[EventType.INVOICE_CREATED.value]
-            metrics.invoices.total_created = counter.count
-            metrics.invoices.total_amount = counter.total_value
-            if counter.count > 0:
-                metrics.invoices.avg_invoice_amount = counter.total_value / counter.count
-
-        if EventType.INVOICE_PAID.value in counters:
-            counter = counters[EventType.INVOICE_PAID.value]
-            metrics.invoices.total_paid = counter.count
-            metrics.invoices.paid_amount = counter.total_value
-
-        # Calcular tasa de conversión
-        if metrics.invoices.total_created > 0:
-            metrics.invoices.conversion_rate = (
-                metrics.invoices.total_paid / metrics.invoices.total_created
+        if use_db:
+            # Obtener desde base de datos
+            db_summary = self._collector.get_organization_summary_from_db(
+                organization_id=organization_id,
+                since=since,
             )
 
-        # Métricas del bot
-        for event_type, attr in [
-            (EventType.BOT_MESSAGE, "total_messages"),
-            (EventType.BOT_COMMAND, "total_commands"),
-            (EventType.BOT_PHOTO, "total_photos"),
-            (EventType.BOT_VOICE, "total_voice"),
-        ]:
-            if event_type.value in counters:
-                setattr(metrics.bot, attr, counters[event_type.value].count)
+            if db_summary:
+                # Procesar datos de BD
+                invoices_data = db_summary.get("invoices", {})
+                metrics.invoices.total_created = invoices_data.get("created", 0)
+                metrics.invoices.total_amount = invoices_data.get("total_amount", 0.0)
+                metrics.invoices.total_paid = invoices_data.get("paid", 0)
+                metrics.invoices.paid_amount = invoices_data.get("paid_amount", 0.0)
 
-        # IA
-        if EventType.AI_EXTRACTION.value in counters:
-            counter = counters[EventType.AI_EXTRACTION.value]
-            metrics.bot.ai_extractions_total = counter.count
-            metrics.bot.ai_extractions_success = counter.success_count
-            metrics.bot.ai_success_rate = counter.success_rate
-            metrics.bot.avg_response_time_ms = counter.avg_duration_ms
+                if metrics.invoices.total_created > 0:
+                    metrics.invoices.avg_invoice_amount = (
+                        metrics.invoices.total_amount / metrics.invoices.total_created
+                    )
+                    metrics.invoices.conversion_rate = (
+                        metrics.invoices.total_paid / metrics.invoices.total_created
+                    )
 
-        # Obtener última actividad
-        events = await self._collector.get_events(
-            organization_id=organization_id,
-            limit=1
-        )
-        if events:
-            metrics.last_activity = events[0].timestamp
+                bot_data = db_summary.get("bot", {})
+                metrics.bot.total_photos = bot_data.get("photos", 0)
+                metrics.bot.total_voice = bot_data.get("voice", 0)
+                metrics.bot.ai_success_rate = bot_data.get("photos_success_rate", 0.0)
+
+                ai_data = db_summary.get("ai", {})
+                metrics.bot.ai_extractions_total = ai_data.get("extractions", 0)
+                metrics.bot.ai_success_rate = ai_data.get("success_rate", 0.0)
+                metrics.bot.avg_response_time_ms = ai_data.get("avg_duration_ms", 0.0)
+
+                last_activity = db_summary.get("last_activity")
+                if last_activity:
+                    metrics.last_activity = datetime.fromisoformat(last_activity)
+        else:
+            # Obtener desde memoria
+            counters = await self._collector.get_organization_counters(organization_id)
+
+            # Métricas de facturación
+            if EventType.INVOICE_CREATED.value in counters:
+                counter = counters[EventType.INVOICE_CREATED.value]
+                metrics.invoices.total_created = counter.count
+                metrics.invoices.total_amount = counter.total_value
+                if counter.count > 0:
+                    metrics.invoices.avg_invoice_amount = counter.total_value / counter.count
+
+            if EventType.INVOICE_PAID.value in counters:
+                counter = counters[EventType.INVOICE_PAID.value]
+                metrics.invoices.total_paid = counter.count
+                metrics.invoices.paid_amount = counter.total_value
+
+            # Calcular tasa de conversión
+            if metrics.invoices.total_created > 0:
+                metrics.invoices.conversion_rate = (
+                    metrics.invoices.total_paid / metrics.invoices.total_created
+                )
+
+            # Métricas del bot
+            for event_type, attr in [
+                (EventType.BOT_MESSAGE, "total_messages"),
+                (EventType.BOT_COMMAND, "total_commands"),
+                (EventType.BOT_PHOTO, "total_photos"),
+                (EventType.BOT_VOICE, "total_voice"),
+            ]:
+                if event_type.value in counters:
+                    setattr(metrics.bot, attr, counters[event_type.value].count)
+
+            # IA
+            if EventType.AI_EXTRACTION.value in counters:
+                counter = counters[EventType.AI_EXTRACTION.value]
+                metrics.bot.ai_extractions_total = counter.count
+                metrics.bot.ai_extractions_success = counter.success_count
+                metrics.bot.ai_success_rate = counter.success_rate
+                metrics.bot.avg_response_time_ms = counter.avg_duration_ms
+
+            # Obtener última actividad
+            events = await self._collector.get_events(
+                organization_id=organization_id,
+                limit=1
+            )
+            if events:
+                metrics.last_activity = events[0].timestamp
 
         return metrics
 
@@ -545,6 +629,65 @@ class BusinessMetricsService:
             "collector": collector_summary,
             "generated_at": datetime.utcnow().isoformat(),
         }
+
+    def get_daily_time_series(
+        self,
+        organization_id: Optional[str] = None,
+        event_type: Optional[str] = None,
+        days: int = 30,
+    ) -> List[Dict[str, Any]]:
+        """
+        Obtiene series temporales diarias desde la BD.
+
+        Ideal para gráficos de líneas o barras.
+
+        Args:
+            organization_id: Filtrar por organización
+            event_type: Filtrar por tipo de evento
+            days: Número de días hacia atrás
+
+        Returns:
+            Lista de datos por día: [{date, count, total_value, success_rate}]
+        """
+        if not is_db_persistence_enabled():
+            logger.warning("Persistencia BD deshabilitada, retornando lista vacía")
+            return []
+
+        return self._collector.get_daily_stats_from_db(
+            organization_id=organization_id,
+            event_type=event_type,
+            days=days,
+        )
+
+    def get_historical_events(
+        self,
+        organization_id: Optional[str] = None,
+        event_type: Optional[str] = None,
+        since: Optional[datetime] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """
+        Obtiene eventos históricos desde la BD.
+
+        Args:
+            organization_id: Filtrar por organización
+            event_type: Filtrar por tipo de evento
+            since: Desde esta fecha
+            limit: Máximo de eventos
+
+        Returns:
+            Lista de eventos
+        """
+        if not is_db_persistence_enabled():
+            logger.warning("Persistencia BD deshabilitada, retornando lista vacía")
+            return []
+
+        return self._collector.get_events_from_db(
+            organization_id=organization_id,
+            event_type=event_type,
+            since=since,
+            limit=limit,
+        )
 
 
 # ============================================================================
