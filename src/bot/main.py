@@ -19,7 +19,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from telegram import Update
-from telegram.ext import Application, CommandHandler
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 from config.settings import settings
 from src.utils.logger import get_logger
@@ -102,18 +102,23 @@ async def post_shutdown(application: Application) -> None:
     logger.info("Contexto de aplicación cerrado")
 
 
-async def error_handler(update: Update, context) -> None:
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handler global de errores.
 
     Captura errores no manejados por los middlewares.
+
+    Args:
+        update: El update que causó el error (puede ser cualquier tipo)
+        context: Contexto de Telegram con información del error
     """
     logger.error(
         f"Error no manejado: {context.error}",
         exc_info=context.error
     )
 
-    if update and update.effective_message:
+    # update puede ser None o cualquier tipo de objeto Update
+    if isinstance(update, Update) and update.effective_message:
         try:
             await update.effective_message.reply_text(
                 "⚠ Algo salió mal\n\n"

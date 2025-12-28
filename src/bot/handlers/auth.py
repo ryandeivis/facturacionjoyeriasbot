@@ -311,11 +311,13 @@ async def mostrar_mis_facturas(update: Update, context: ContextTypes.DEFAULT_TYP
     mensaje += "Últimas 10 facturas\n\n"
 
     for f in facturas:
-        estado_formatted = format_invoice_status(f.estado)
+        # SQLAlchemy Column types require str() conversion for type safety
+        estado_formatted = format_invoice_status(str(f.estado))
+        total_value = float(f.total) if f.total else 0.0
         mensaje += f"{estado_formatted}\n"
         mensaje += f"   📄 No: {f.numero_factura}\n"
         mensaje += f"   👤 {f.cliente_nombre}\n"
-        mensaje += f"   💰 {format_currency(f.total)}\n"
+        mensaje += f"   💰 {format_currency(total_value)}\n"
         mensaje += f"   📅 {f.created_at.strftime('%d/%m/%Y')}\n\n"
 
     await update.message.reply_text(mensaje)

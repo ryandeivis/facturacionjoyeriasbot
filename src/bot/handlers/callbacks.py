@@ -130,10 +130,11 @@ async def _confirm_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await query.edit_message_text(resumen)
 
         # Enviar nuevo mensaje con teclado
-        await query.message.reply_text(
-            "Presiona CONFIRMAR para generar:",
-            reply_markup=get_generate_keyboard()
-        )
+        if query.message and hasattr(query.message, 'reply_text'):
+            await query.message.reply_text(
+                "Presiona CONFIRMAR para generar:",
+                reply_markup=get_generate_keyboard()
+            )
 
         return InvoiceStates.GENERAR_FACTURA
     else:
@@ -155,10 +156,11 @@ async def _confirm_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await query.edit_message_text("✖ Operación cancelada")
 
     # Enviar mensaje con menú
-    await query.message.reply_text(
-        "¿En qué puedo ayudarte?",
-        reply_markup=get_menu_keyboard(rol)
-    )
+    if query.message and hasattr(query.message, 'reply_text'):
+        await query.message.reply_text(
+            "¿En qué puedo ayudarte?",
+            reply_markup=get_menu_keyboard(rol)
+        )
 
     limpiar_datos_factura(context)
     return AuthStates.MENU_PRINCIPAL

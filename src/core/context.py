@@ -6,8 +6,8 @@ Implementa el patrón Dependency Injection para mejor testabilidad.
 """
 
 from dataclasses import dataclass, field
-from typing import Protocol, Optional, AsyncGenerator, Any
-from contextlib import asynccontextmanager
+from typing import Protocol, Optional, AsyncGenerator, Any, AbstractSet, runtime_checkable
+from contextlib import asynccontextmanager, AbstractAsyncContextManager
 import asyncio
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +20,7 @@ from src.utils.logger import get_logger
 # PROTOCOLOS (Interfaces)
 # ============================================================================
 
+@runtime_checkable
 class DatabaseProviderProtocol(Protocol):
     """Protocolo para proveedores de base de datos."""
 
@@ -27,8 +28,7 @@ class DatabaseProviderProtocol(Protocol):
         """Inicializa la conexión."""
         ...
 
-    @asynccontextmanager
-    async def get_session(self) -> AsyncGenerator[AsyncSession, None]:
+    def get_session(self) -> AbstractAsyncContextManager[AsyncSession]:
         """Proporciona una sesión de base de datos."""
         ...
 
@@ -188,9 +188,9 @@ class AppContext:
             # usar session...
     """
 
-    db: DatabaseProviderProtocol = field(default_factory=DatabaseProvider)
-    n8n: N8NServiceProtocol = field(default_factory=N8NServiceAdapter)
-    config: Settings = field(default_factory=lambda: settings)
+    db: Any = field(default_factory=DatabaseProvider)  # DatabaseProvider implements Protocol
+    n8n: Any = field(default_factory=N8NServiceAdapter)  # N8NServiceAdapter implements Protocol
+    config: Any = field(default_factory=lambda: settings)  # Settings or config class
     _logger: Any = field(default=None, repr=False)
     _initialized: bool = field(default=False, repr=False)
 

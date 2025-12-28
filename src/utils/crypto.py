@@ -55,7 +55,8 @@ def hash_password(password: str) -> str:
     Returns:
         Hash bcrypt de la contraseña
     """
-    return pwd_context.hash(password)
+    result: str = pwd_context.hash(password)
+    return result
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -70,7 +71,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         True si coinciden, False en caso contrario
     """
     try:
-        return pwd_context.verify(plain_password, hashed_password)
+        result: bool = pwd_context.verify(plain_password, hashed_password)
+        return result
     except Exception:
         return False
 
@@ -219,7 +221,7 @@ class JWTService:
                 logger.warning(f"Tipo de token incorrecto: {payload.get('type')}")
                 return None
 
-            return payload
+            return dict(payload)
 
         except jwt.ExpiredSignatureError:
             logger.debug("Token expirado")
@@ -239,7 +241,8 @@ class JWTService:
         """Extrae el org_id de un token."""
         payload = self.verify_token(token)
         if payload:
-            return payload.get("org_id")
+            org_id = payload.get("org_id")
+            return str(org_id) if org_id is not None else None
         return None
 
 
@@ -650,7 +653,10 @@ def get_crypto_service() -> CryptoService:
     """
     from config.settings import settings
 
+    # SECRET_KEY es SecretStr, extraer valor
+    secret_key = settings.SECRET_KEY.get_secret_value()
+
     return CryptoService(
-        secret_key=settings.SECRET_KEY,
+        secret_key=secret_key,
         jwt_expire_hours=settings.JWT_EXPIRATION_HOURS
     )

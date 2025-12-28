@@ -1,42 +1,144 @@
-# Bot de Telegram
-python-telegram-bot>=22.0
+# ==============================================================================
+# Jewelry Invoice Bot - Dependencies
+# ==============================================================================
+#
+# Arquitectura: Clean Code, Modular, SaaS Multi-tenant
+#
+# MEJORA 16: Upper Bounds en Dependencias
+# ----------------------------------------
+# Todas las dependencias tienen límites superiores para evitar breaking changes.
+# Formato: >=X.Y.Z,<X+1.0.0 (Semantic Versioning)
+#
+# Beneficios:
+#   - Builds reproducibles y predecibles
+#   - Protección contra breaking changes automáticos
+#   - Control explícito de actualizaciones
+#
+# Para actualizar una dependencia:
+#   1. Verificar changelog de la nueva versión
+#   2. Correr tests: pytest tests/
+#   3. Actualizar el upper bound si es necesario
+#
+# ==============================================================================
 
-# Base de datos
-sqlalchemy[asyncio]>=2.0.0
-asyncpg>=0.29.0
-aiosqlite>=0.19.0
-alembic>=1.13.0
 
-# Validación
-pydantic>=2.5.0
-pydantic-settings>=2.1.0
+# ==============================================================================
+# CORE - Bot de Telegram
+# ==============================================================================
+# python-telegram-bot v22.x - API v22 con soporte async nativo
+# Changelog: https://github.com/python-telegram-bot/python-telegram-bot/releases
+python-telegram-bot>=22.0,<23.0
 
-# Seguridad
-passlib>=1.7.4
-bcrypt>=4.1.1
-pyjwt>=2.8.0
-cryptography>=41.0.0
-bleach>=6.1.0
 
-# HTTP requests (para n8n)
-httpx>=0.25.0
+# ==============================================================================
+# DATABASE - Persistencia y Migraciones
+# ==============================================================================
+# SQLAlchemy 2.x - ORM async con tipado mejorado
+# asyncpg - Driver PostgreSQL async de alto rendimiento
+# aiosqlite - Driver SQLite async para desarrollo/testing
+# alembic - Migraciones de base de datos
+sqlalchemy[asyncio]>=2.0.0,<3.0.0
+asyncpg>=0.29.0,<1.0.0
+aiosqlite>=0.19.0,<1.0.0
+alembic>=1.13.0,<2.0.0
 
-# Utilidades
-python-dotenv>=1.0.0
 
-# Logging estructurado
-structlog>=23.2.0
-python-json-logger>=2.0.0
+# ==============================================================================
+# VALIDATION - Pydantic para Schemas
+# ==============================================================================
+# Pydantic v2 - Validación de datos con performance mejorada
+# pydantic-settings - Gestión de configuración desde .env
+pydantic>=2.5.0,<3.0.0
+pydantic-settings>=2.1.0,<3.0.0
 
-# Monitoring
-prometheus-client>=0.19.0
 
-# Testing
-pytest>=7.4.0
-pytest-asyncio>=0.21.0
-pytest-cov>=4.1.0
-factory-boy>=3.3.0
+# ==============================================================================
+# SECURITY - Autenticación y Criptografía
+# ==============================================================================
+# passlib + bcrypt - Hash seguro de contraseñas
+# pyjwt - Tokens JWT para autenticación API
+# cryptography - Operaciones criptográficas de bajo nivel
+# bleach - Sanitización de HTML para prevenir XSS
+passlib>=1.7.4,<2.0.0
+bcrypt>=4.1.1,<5.0.0
+pyjwt>=2.8.0,<3.0.0
+cryptography>=41.0.0,<44.0.0
+bleach>=6.1.0,<7.0.0
 
-# Code Quality
-ruff>=0.1.0
-mypy>=1.7.0
+
+# ==============================================================================
+# HTTP - Cliente para Integraciones
+# ==============================================================================
+# httpx - Cliente HTTP async moderno (reemplaza requests)
+# Usado para: n8n webhooks, APIs externas
+httpx>=0.25.0,<1.0.0
+
+
+# ==============================================================================
+# CONFIGURATION - Variables de Entorno
+# ==============================================================================
+# python-dotenv - Carga .env en desarrollo
+python-dotenv>=1.0.0,<2.0.0
+
+
+# ==============================================================================
+# LOGGING - Logs Estructurados
+# ==============================================================================
+# structlog - Logging estructurado con contexto
+# python-json-logger - Formato JSON para logs (ELK/Datadog compatible)
+structlog>=23.2.0,<25.0.0
+python-json-logger>=2.0.0,<3.0.0
+
+
+# ==============================================================================
+# MONITORING - Métricas y Observabilidad
+# ==============================================================================
+# prometheus-client - Métricas Prometheus para monitoring
+prometheus-client>=0.19.0,<1.0.0
+
+
+# ==============================================================================
+# TESTING - Framework de Pruebas
+# ==============================================================================
+# pytest - Framework de testing
+# pytest-asyncio - Soporte para tests async
+# pytest-cov - Coverage de código
+# factory-boy - Factories para fixtures (Mejora 17)
+# locust - Load testing (Mejora 19)
+pytest>=7.4.0,<9.0.0
+pytest-asyncio>=0.21.0,<1.0.0
+pytest-cov>=4.1.0,<6.0.0
+factory-boy>=3.3.0,<4.0.0
+locust>=2.20.0,<3.0.0
+
+
+# ==============================================================================
+# CODE QUALITY - Linting y Type Checking
+# ==============================================================================
+# ruff - Linting ultra-rápido (reemplaza flake8, isort, black)
+# mypy - Verificación de tipos estática (Mejora 15)
+ruff>=0.1.0,<1.0.0
+mypy>=1.7.0,<2.0.0
+
+
+# ==============================================================================
+# API - FastAPI (Opcional)
+# ==============================================================================
+# Descomenta si usas la API REST:
+# fastapi>=0.109.0,<1.0.0
+# uvicorn[standard]>=0.27.0,<1.0.0
+
+
+# ==============================================================================
+# CACHE - Redis (Mejora 7)
+# ==============================================================================
+# Descomenta si usas Redis para caché:
+# redis>=5.0.0,<6.0.0
+
+
+# ==============================================================================
+# PDF - Generación de Facturas
+# ==============================================================================
+# Descomenta si generas PDFs:
+# weasyprint>=60.0,<62.0
+# jinja2>=3.1.0,<4.0.0

@@ -78,7 +78,7 @@ def update_last_login(db: Session, cedula: str, org_id: Optional[str] = None) ->
     try:
         user = get_user_by_cedula(db, cedula, org_id)
         if user:
-            user.ultimo_login = datetime.utcnow()
+            user.ultimo_login = datetime.utcnow()  # type: ignore[assignment]
             db.commit()
             return True
         return False
@@ -220,7 +220,7 @@ async def update_last_login_async(
     try:
         user = await get_user_by_cedula_async(db, cedula, org_id)
         if user:
-            user.ultimo_login = datetime.utcnow()
+            user.ultimo_login = datetime.utcnow()  # type: ignore[assignment]
             await db.commit()
             return True
         return False

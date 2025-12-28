@@ -187,8 +187,8 @@ class TextParserService:
 
     def _extract_items(self, text: str) -> List[ParsedItem]:
         """Extrae items usando múltiples patrones."""
-        all_items = []
-        matched_ranges = []
+        all_items: List[ParsedItem] = []
+        matched_ranges: List[tuple[int, int]] = []
 
         # Intentar cada patrón en orden de especificidad
         pattern_order = ['numbered_full', 'quantity_first', 'word_quantity', 'inline_price', 'simple']

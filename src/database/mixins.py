@@ -10,8 +10,9 @@ Mixins reutilizables para modelos de base de datos:
 from sqlalchemy import Column, DateTime, Boolean, String, event
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import Query
+from sqlalchemy.sql.elements import ColumnElement
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 import uuid
 
 
@@ -23,8 +24,8 @@ class SoftDeleteMixin:
     """
     __allow_unmapped__ = True
 
-    deleted_at = Column(DateTime, nullable=True, index=True)
-    is_deleted = Column(Boolean, default=False, index=True, nullable=False)
+    deleted_at: Any = Column(DateTime, nullable=True, index=True)
+    is_deleted: Any = Column(Boolean, default=False, index=True, nullable=False)
 
     def soft_delete(self) -> None:
         """Marca el registro como eliminado"""
@@ -37,7 +38,7 @@ class SoftDeleteMixin:
         self.is_deleted = False
 
     @classmethod
-    def not_deleted(cls) -> bool:
+    def not_deleted(cls) -> Any:
         """Filtro para obtener solo registros no eliminados"""
         return cls.is_deleted == False
 

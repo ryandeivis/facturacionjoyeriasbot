@@ -1368,7 +1368,13 @@ async def ejecutar_test_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         }
     ]
 
-    subtotal = sum(i['precio'] * i['cantidad'] for i in test_items)
+    # Calcular subtotal (los items son dicts con valores int)
+    subtotal: int = 0
+    for item in test_items:
+        precio = item['precio']
+        cantidad = item['cantidad']
+        if isinstance(precio, int) and isinstance(cantidad, int):
+            subtotal += precio * cantidad
     impuesto = int(subtotal * settings.TAX_RATE)
     total = subtotal + impuesto
 

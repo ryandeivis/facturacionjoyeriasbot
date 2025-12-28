@@ -509,7 +509,7 @@ class N8NService:
                 )
                 result["extract_webhook"] = {
                     "status": "ok" if response.status_code < 400 else "error",
-                    "status_code": response.status_code
+                    "status_code": str(response.status_code)
                 }
             except CircuitBreakerOpen:
                 result["extract_webhook"] = {"status": "circuit_open"}
@@ -525,7 +525,7 @@ class N8NService:
                 )
                 result["pdf_webhook"] = {
                     "status": "ok" if response.status_code < 400 else "error",
-                    "status_code": response.status_code
+                    "status_code": str(response.status_code)
                 }
             except CircuitBreakerOpen:
                 result["pdf_webhook"] = {"status": "circuit_open"}

@@ -7,14 +7,16 @@ Incluye connection pooling y context managers.
 
 from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from sqlalchemy.orm import sessionmaker, DeclarativeBase, Session
 from sqlalchemy.pool import NullPool, QueuePool
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
-from typing import AsyncGenerator, Generator, Optional
+from typing import AsyncGenerator, Generator, Optional, Any
 
-# Base para los modelos
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """Clase base para todos los modelos de SQLAlchemy."""
+    pass
 
 # Variables globales - Sync (para migraciones y compatibilidad)
 engine = None
@@ -120,6 +122,9 @@ async def create_tables_async() -> None:
     # Importar modelos para registrarlos
     from src.database import models  # noqa
 
+    # Assert para MyPy: después de init_async_db(), async_engine no es None
+    assert async_engine is not None, "async_engine debe estar inicializado"
+
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -133,6 +138,9 @@ def create_tables() -> None:
 
     # Importar modelos para registrarlos
     from src.database import models  # noqa
+
+    # Assert para MyPy: después de init_db(), engine no es None
+    assert engine is not None, "engine debe estar inicializado"
 
     Base.metadata.create_all(bind=engine)
 
@@ -150,6 +158,9 @@ async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
 
     if AsyncSessionLocal is None:
         init_async_db()
+
+    # Assert para MyPy: después de init_async_db(), AsyncSessionLocal no es None
+    assert AsyncSessionLocal is not None, "AsyncSessionLocal debe estar inicializado"
 
     session = AsyncSessionLocal()
     try:
@@ -176,6 +187,9 @@ def get_sync_db() -> Generator[Session, None, None]:
     if SessionLocal is None:
         init_db()
 
+    # Assert para MyPy: después de init_db(), SessionLocal no es None
+    assert SessionLocal is not None, "SessionLocal debe estar inicializado"
+
     session = SessionLocal()
     try:
         yield session
@@ -201,6 +215,9 @@ def get_db() -> Generator[Session, None, None]:
 
     if SessionLocal is None:
         init_db()
+
+    # Assert para MyPy: después de init_db(), SessionLocal no es None
+    assert SessionLocal is not None, "SessionLocal debe estar inicializado"
 
     db = SessionLocal()
     try:

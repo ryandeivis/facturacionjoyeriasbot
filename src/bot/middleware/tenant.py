@@ -5,6 +5,7 @@ Middleware para gestión de contexto multi-tenant.
 Incluye caché TTL para reducir queries a la base de datos.
 """
 
+import contextvars
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass
@@ -210,10 +211,11 @@ class TenantMiddleware(BaseMiddleware):
                 if not org_id:
                     return None
 
-                # Obtener plan de la organización
+                # Obtener plan de la organización (plan está en Organization, no TenantConfig)
+                from src.database.models import Organization
                 config_result = await session.execute(
-                    select(TenantConfig.plan).where(
-                        TenantConfig.organization_id == org_id
+                    select(Organization.plan).where(
+                        Organization.id == org_id
                     )
                 )
                 org_plan = config_result.scalar_one_or_none() or "basic"
@@ -301,12 +303,12 @@ class TenantContextManager:
 
     def __init__(self, org_id: str):
         self.org_id = org_id
-        self._previous_org_id = None
+        self._previous_org_id: Optional[str] = None
+        self._ctx_var: Optional[contextvars.ContextVar[Optional[str]]] = None
 
     async def __aenter__(self):
         """Establece el contexto de tenant."""
         # Guardar contexto anterior si existe
-        import contextvars
         self._ctx_var = contextvars.ContextVar('current_org_id', default=None)
         self._previous_org_id = self._ctx_var.get()
         self._ctx_var.set(self.org_id)
@@ -314,6 +316,8 @@ class TenantContextManager:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Restaura el contexto anterior."""
+        if self._ctx_var is None:
+            return False
         if self._previous_org_id:
             self._ctx_var.set(self._previous_org_id)
         else:

@@ -43,7 +43,7 @@ class AuditMiddleware(BaseMiddleware):
 
     def _extract_action_info(self, update: Update) -> Dict[str, Any]:
         """Extrae información de la acción del update."""
-        info = {
+        info: Dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat(),
             "user_id": None,
             "username": None,

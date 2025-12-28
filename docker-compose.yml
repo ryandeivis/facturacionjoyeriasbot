@@ -1,11 +1,38 @@
-# Docker Compose configuration for Jewelry Invoice Bot
-# Supports both development and production environments
+# ==============================================================================
+# Docker Compose - Jewelry Invoice Bot
+# ==============================================================================
+#
+# Arquitectura: Clean Code, Modular, SaaS Multi-tenant
+#
+# MEJORA 20: Límites de Recursos
+# ------------------------------
+# Todos los servicios tienen límites de CPU/memoria para:
+#   - Estabilidad: Un servicio con problemas no afecta a los demás
+#   - Predecibilidad: Recursos conocidos para planificación
+#   - Kubernetes-ready: Compatible con orquestadores
+#   - Costos: Dimensionamiento preciso de infraestructura
+#
+# Configuración de recursos por entorno:
+#   - Development: Límites relajados para debugging
+#   - Staging: Límites moderados para pruebas
+#   - Production: Límites estrictos para estabilidad
+#
+# ==============================================================================
 
 version: '3.8'
 
+
+# ==============================================================================
+# SERVICIOS
+# ==============================================================================
+
 services:
+
   # ============================================================================
-  # BOT SERVICE
+  # BOT SERVICE - Telegram Bot + API
+  # ============================================================================
+  # Servicio principal que ejecuta el bot de Telegram y la API REST.
+  # Recursos: Moderados (Python async, bajo consumo de memoria)
   # ============================================================================
   bot:
     build:
@@ -13,6 +40,10 @@ services:
       target: ${BUILD_TARGET:-production}
     container_name: jewelry-invoice-bot
     restart: unless-stopped
+
+    # --------------------------------------------------------------------------
+    # Environment Variables
+    # --------------------------------------------------------------------------
     environment:
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - DATABASE_URL=postgresql+asyncpg://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-jewelry_db}
@@ -20,50 +51,217 @@ services:
       - SECRET_KEY=${SECRET_KEY}
       - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Redis (si está habilitado)
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+
+    # --------------------------------------------------------------------------
+    # Volumes
+    # --------------------------------------------------------------------------
     volumes:
       - bot_logs:/app/logs
       - bot_data:/app/data
+
+    # --------------------------------------------------------------------------
+    # Ports
+    # --------------------------------------------------------------------------
     ports:
       - "${API_PORT:-8000}:8000"
+
+    # --------------------------------------------------------------------------
+    # Dependencies
+    # --------------------------------------------------------------------------
     depends_on:
       db:
         condition: service_healthy
-    # Health check HTTP - Más eficiente que Python imports
-    # Verifica que el servicio responde en /health/live
+
+    # --------------------------------------------------------------------------
+    # Health Check (Mejora 13)
+    # --------------------------------------------------------------------------
+    # HTTP health check - más eficiente que Python imports (~20ms vs ~1000ms)
     healthcheck:
       test: ["CMD", "curl", "--fail", "--silent", "--max-time", "5", "http://localhost:8000/health/live"]
       interval: 30s
       timeout: 5s
       start_period: 30s
       retries: 3
+
+    # --------------------------------------------------------------------------
+    # Resource Limits (Mejora 20)
+    # --------------------------------------------------------------------------
+    # Bot Python async: Bajo consumo, pero necesita margen para picos
+    #   - Limits: Máximo que puede usar
+    #   - Reservations: Mínimo garantizado
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
     networks:
       - jewelry-network
 
+
   # ============================================================================
-  # DATABASE SERVICE
+  # DATABASE SERVICE - PostgreSQL
+  # ============================================================================
+  # Base de datos principal con soporte multi-tenant.
+  # Recursos: Altos (operaciones I/O intensivas, índices en memoria)
   # ============================================================================
   db:
     image: postgres:15-alpine
     container_name: jewelry-db
     restart: unless-stopped
+
+    # --------------------------------------------------------------------------
+    # Environment Variables
+    # --------------------------------------------------------------------------
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME:-jewelry_db}
+      # Optimizaciones PostgreSQL
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+
+    # --------------------------------------------------------------------------
+    # Volumes
+    # --------------------------------------------------------------------------
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
+    # --------------------------------------------------------------------------
+    # Ports
+    # --------------------------------------------------------------------------
     ports:
       - "${DB_PORT:-5432}:5432"
+
+    # --------------------------------------------------------------------------
+    # Health Check
+    # --------------------------------------------------------------------------
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+    # --------------------------------------------------------------------------
+    # Resource Limits (Mejora 20)
+    # --------------------------------------------------------------------------
+    # PostgreSQL: Requiere más recursos para índices y queries
+    #   - shared_buffers usa ~25% de la memoria asignada
+    #   - work_mem para operaciones de ordenamiento
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1G
+        reservations:
+          cpus: '0.50'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
     networks:
       - jewelry-network
 
+
   # ============================================================================
-  # MIGRATIONS SERVICE (run once)
+  # REDIS SERVICE - Cache y Rate Limiting (Mejora 7 y 8)
+  # ============================================================================
+  # Cache distribuido para sesiones, rate limiting y datos temporales.
+  # Recursos: Bajos (operaciones en memoria, muy eficiente)
+  # ============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: jewelry-redis
+    restart: unless-stopped
+
+    # --------------------------------------------------------------------------
+    # Command - Configuración optimizada
+    # --------------------------------------------------------------------------
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 200mb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 60
+
+    # --------------------------------------------------------------------------
+    # Volumes
+    # --------------------------------------------------------------------------
+    volumes:
+      - redis_data:/data
+
+    # --------------------------------------------------------------------------
+    # Ports
+    # --------------------------------------------------------------------------
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+    # --------------------------------------------------------------------------
+    # Health Check
+    # --------------------------------------------------------------------------
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+    # --------------------------------------------------------------------------
+    # Resource Limits (Mejora 20)
+    # --------------------------------------------------------------------------
+    # Redis: Muy eficiente, límites conservadores
+    #   - maxmemory en comando limita uso interno
+    #   - Container limit como respaldo de seguridad
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.10'
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 60s
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
+    networks:
+      - jewelry-network
+
+    # --------------------------------------------------------------------------
+    # Profile (opcional - activar con --profile redis)
+    # --------------------------------------------------------------------------
+    profiles:
+      - redis
+      - full
+
+
+  # ============================================================================
+  # MIGRATIONS SERVICE - Alembic Migrations
+  # ============================================================================
+  # Ejecuta migraciones de base de datos (run once).
+  # Recursos: Mínimos (tarea corta y efímera)
   # ============================================================================
   migrations:
     build:
@@ -71,53 +269,179 @@ services:
       target: production
     container_name: jewelry-migrations
     command: ["alembic", "upgrade", "head"]
+
+    # --------------------------------------------------------------------------
+    # Environment Variables
+    # --------------------------------------------------------------------------
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-jewelry_db}
+
+    # --------------------------------------------------------------------------
+    # Dependencies
+    # --------------------------------------------------------------------------
     depends_on:
       db:
         condition: service_healthy
+
+    # --------------------------------------------------------------------------
+    # Resource Limits (Mejora 20)
+    # --------------------------------------------------------------------------
+    # Migraciones: Tarea corta, recursos mínimos
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 256M
+        reservations:
+          cpus: '0.10'
+          memory: 128M
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
     networks:
       - jewelry-network
+
+    # --------------------------------------------------------------------------
+    # Profile
+    # --------------------------------------------------------------------------
     profiles:
       - migrate
 
+
   # ============================================================================
-  # N8N SERVICE (optional)
+  # N8N SERVICE - Workflow Automation (Opcional)
+  # ============================================================================
+  # Automatización de workflows para procesamiento de facturas.
+  # Recursos: Moderados (Node.js, workflows pueden ser intensivos)
   # ============================================================================
   n8n:
     image: n8nio/n8n:latest
     container_name: jewelry-n8n
     restart: unless-stopped
+
+    # --------------------------------------------------------------------------
+    # Environment Variables
+    # --------------------------------------------------------------------------
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
       - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
       - WEBHOOK_URL=${N8N_WEBHOOK_BASE_URL:-http://localhost:5678}
+      - N8N_METRICS=true
+
+    # --------------------------------------------------------------------------
+    # Volumes
+    # --------------------------------------------------------------------------
     volumes:
       - n8n_data:/home/node/.n8n
+
+    # --------------------------------------------------------------------------
+    # Ports
+    # --------------------------------------------------------------------------
     ports:
       - "${N8N_PORT:-5678}:5678"
+
+    # --------------------------------------------------------------------------
+    # Health Check
+    # --------------------------------------------------------------------------
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    # --------------------------------------------------------------------------
+    # Resource Limits (Mejora 20)
+    # --------------------------------------------------------------------------
+    # n8n Node.js: Moderado, workflows pueden usar memoria
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+
+    # --------------------------------------------------------------------------
+    # Network
+    # --------------------------------------------------------------------------
     networks:
       - jewelry-network
+
+    # --------------------------------------------------------------------------
+    # Profile
+    # --------------------------------------------------------------------------
     profiles:
       - n8n
+      - full
 
-# ============================================================================
-# VOLUMES
-# ============================================================================
+
+# ==============================================================================
+# VOLUMES - Persistencia de Datos
+# ==============================================================================
 volumes:
+  # Base de datos PostgreSQL
   postgres_data:
     driver: local
+    name: jewelry_postgres_data
+
+  # Logs del bot
   bot_logs:
     driver: local
+    name: jewelry_bot_logs
+
+  # Datos del bot (uploads, cache local)
   bot_data:
     driver: local
+    name: jewelry_bot_data
+
+  # Datos de Redis (AOF persistence)
+  redis_data:
+    driver: local
+    name: jewelry_redis_data
+
+  # Datos de n8n (workflows, credentials)
   n8n_data:
     driver: local
+    name: jewelry_n8n_data
 
-# ============================================================================
-# NETWORKS
-# ============================================================================
+
+# ==============================================================================
+# NETWORKS - Comunicación entre Servicios
+# ==============================================================================
 networks:
   jewelry-network:
     driver: bridge
+    name: jewelry_network
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+
+# ==============================================================================
+# RESUMEN DE RECURSOS (Mejora 20)
+# ==============================================================================
+#
+# Servicio     | CPU Limit | Memory Limit | CPU Reserved | Memory Reserved
+# -------------|-----------|--------------|--------------|----------------
+# bot          | 0.50      | 512M         | 0.25         | 256M
+# db           | 1.00      | 1G           | 0.50         | 512M
+# redis        | 0.25      | 256M         | 0.10         | 128M
+# migrations   | 0.25      | 256M         | 0.10         | 128M
+# n8n          | 0.50      | 512M         | 0.25         | 256M
+# -------------|-----------|--------------|--------------|----------------
+# TOTAL MAX    | 2.50      | 2.5G         | 1.20         | 1.25G
+#
+# Notas:
+# - Los límites son para un servidor de 4 CPU / 4GB RAM mínimo
+# - En producción, ajustar según métricas reales de uso
+# - Usar `docker stats` para monitorear consumo
+#
+# ==============================================================================

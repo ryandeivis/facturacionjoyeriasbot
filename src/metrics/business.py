@@ -609,7 +609,7 @@ class BusinessMetricsService:
         # Obtener todas las organizaciones con métricas
         summary = await self._collector.get_summary()
 
-        at_risk = []
+        at_risk: list[Dict[str, Any]] = []
 
         # Esto requeriría acceso a la lista de organizaciones desde la DB
         # Por ahora retornamos lista vacía - se integrará con el repo de orgs

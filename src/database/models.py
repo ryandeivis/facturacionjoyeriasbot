@@ -10,8 +10,9 @@ from sqlalchemy import (
     ForeignKey, Float, Index
 )
 from sqlalchemy.types import TypeDecorator, VARCHAR
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from datetime import datetime
+from typing import Any, Optional, Dict, List
 import uuid
 import json
 
@@ -63,7 +64,7 @@ class Organization(Base, TimestampMixin, SoftDeleteMixin):
     status = Column(String(20), default="active", nullable=False)  # active, suspended, cancelled
 
     # Configuración
-    settings = Column(JSONType(), default=dict, nullable=False)
+    settings: Any = Column(JSONType(), default=dict, nullable=False)
 
     # Contacto
     email = Column(String(255), nullable=True)
@@ -99,7 +100,7 @@ class TenantConfig(Base):
     currency = Column(String(3), default="COP", nullable=False)
 
     # Configuración adicional
-    settings = Column(JSONType(), default=dict, nullable=False)
+    settings: Any = Column(JSONType(), default=dict, nullable=False)
 
     # Relación
     organization = relationship("Organization", back_populates="configs")
@@ -172,7 +173,7 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
     cliente_cedula = Column(String(15), nullable=True)
 
     # Items (JSON array)
-    items = Column(JSONType(), default=list, nullable=False)
+    items: Any = Column(JSONType(), default=list, nullable=False)
 
     # Totales
     subtotal = Column(Float, default=0.0)
@@ -195,7 +196,7 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
 
     # Procesamiento n8n
     n8n_processed = Column(Boolean, default=False)
-    n8n_response = Column(JSONType(), nullable=True)
+    n8n_response: Any = Column(JSONType(), nullable=True)
 
     # Relaciones
     organization = relationship("Organization", back_populates="invoices")
@@ -243,9 +244,9 @@ class AuditLog(Base):
     entidad_id = Column(String(100), nullable=True)
 
     # Detalles del cambio
-    detalles = Column(JSONType(), nullable=True)
-    old_values = Column(JSONType(), nullable=True)
-    new_values = Column(JSONType(), nullable=True)
+    detalles: Any = Column(JSONType(), nullable=True)
+    old_values: Any = Column(JSONType(), nullable=True)
+    new_values: Any = Column(JSONType(), nullable=True)
 
     # Metadata
     ip_address = Column(String(45), nullable=True)
@@ -311,7 +312,7 @@ class MetricEvent(Base):
     duration_ms = Column(Float, nullable=True)
 
     # Metadata adicional (JSON) - Nota: 'metadata' es reservado en SQLAlchemy
-    event_metadata = Column(JSONType(), default=dict, nullable=False)
+    event_metadata: Any = Column(JSONType(), default=dict, nullable=False)
 
     # Timestamp con índice para queries temporales
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)

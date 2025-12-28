@@ -5,7 +5,7 @@ Proporciona métodos comunes para todas las queries.
 Implementa el patrón Repository con soporte multi-tenant.
 """
 
-from typing import TypeVar, Generic, Optional, List, Type, Any
+from typing import TypeVar, Generic, Optional, List, Type, Any, cast
 from sqlalchemy import select, and_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +14,8 @@ from src.utils.logger import get_logger
 logger = get_logger(__name__)
 
 # Type variable para el modelo
+# Nota: Los modelos de SQLAlchemy tienen atributos dinámicos (id, organization_id, etc.)
+# que MyPy no puede verificar estáticamente en un TypeVar genérico.
 T = TypeVar('T')
 
 
@@ -37,10 +39,12 @@ class BaseQuery(Generic[T]):
         user = await query.get_by_id(db, "123", org_id="org-1")
     """
 
-    model: Type[T] = None
+    # Modelo de SQLAlchemy - debe ser definido por subclases
+    # Usamos Any porque los modelos tienen atributos dinámicos
+    model: Type[Any]
 
-    def __init__(self):
-        if self.model is None:
+    def __init__(self) -> None:
+        if not hasattr(self, 'model') or self.model is None:
             raise NotImplementedError("Subclass must define 'model' attribute")
 
     async def get_by_id(
@@ -73,7 +77,7 @@ class BaseQuery(Generic[T]):
         result = await db.execute(
             select(self.model).where(and_(*conditions))
         )
-        return result.scalar_one_or_none()
+        return result.scalar_one_or_none()  # type: ignore[no-any-return]
 
     async def get_all(
         self,
@@ -142,7 +146,7 @@ class BaseQuery(Generic[T]):
             await db.commit()
             await db.refresh(record)
             logger.info(f"{self.model.__name__} creado: {record.id}")
-            return record
+            return record  # type: ignore[no-any-return]
         except Exception as e:
             logger.error(f"Error creando {self.model.__name__}: {e}")
             await db.rollback()

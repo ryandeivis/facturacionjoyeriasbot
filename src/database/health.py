@@ -5,10 +5,11 @@ Proporciona verificación de estado de la conexión a la base de datos.
 Útil para monitoring, kubernetes probes y diagnóstico.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.pool import QueuePool
 
 from src.database.connection import get_async_db, async_engine
 from src.utils.logger import get_logger
@@ -82,17 +83,19 @@ class DatabaseHealth:
 
         pool = async_engine.pool
 
+        # Usar getattr con defaults para compatibilidad con diferentes tipos de Pool
+        # QueuePool tiene estos métodos, pero el tipo base Pool no los expone
         return {
             "status": "active",
-            "pool_size": pool.size(),
-            "checked_in": pool.checkedin(),
-            "checked_out": pool.checkedout(),
-            "overflow": pool.overflow(),
-            "invalid": pool.invalidatedcount() if hasattr(pool, 'invalidatedcount') else 0
+            "pool_size": getattr(pool, 'size', lambda: 0)(),
+            "checked_in": getattr(pool, 'checkedin', lambda: 0)(),
+            "checked_out": getattr(pool, 'checkedout', lambda: 0)(),
+            "overflow": getattr(pool, 'overflow', lambda: 0)(),
+            "invalid": getattr(pool, 'invalidatedcount', lambda: 0)()
         }
 
     @staticmethod
-    async def get_table_stats(db: AsyncSession) -> Dict[str, int]:
+    async def get_table_stats(db: AsyncSession) -> Dict[str, Any]:
         """
         Obtiene conteo de registros por tabla principal.
 
@@ -100,7 +103,7 @@ class DatabaseHealth:
             db: Sesión de base de datos
 
         Returns:
-            Dict con conteos por tabla
+            Dict con conteos por tabla (int) o error (str)
         """
         from src.database.models import Organization, User, Invoice, AuditLog
 

@@ -1,3 +1,21 @@
+# ==============================================================================
+# CI/CD Pipeline - Jewelry Invoice Bot
+# ==============================================================================
+#
+# Pipeline de integración continua para el bot de facturación.
+# Arquitectura: Clean Code, Modular, SaaS Multi-tenant
+#
+# Jobs:
+#   1. lint      - Ruff linting + formatting
+#   2. typecheck - MyPy verificación de tipos (ESTRICTO)
+#   3. test      - Pytest con cobertura
+#   4. security  - Bandit + Safety
+#   5. build     - Verificación de imports
+#   6. docker    - Build de imagen Docker
+#   7. deploy    - Deploy a producción
+#
+# ==============================================================================
+
 name: CI/CD Pipeline
 
 on:
@@ -11,10 +29,10 @@ env:
 
 jobs:
   # ============================================================================
-  # LINT & TYPE CHECK
+  # LINT - Ruff Linting & Formatting
   # ============================================================================
   lint:
-    name: Lint & Type Check
+    name: Lint (Ruff)
     runs-on: ubuntu-latest
 
     steps:
@@ -30,37 +48,104 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-pip-lint-${{ hashFiles('requirements.txt') }}
           restore-keys: |
+            ${{ runner.os }}-pip-lint-
             ${{ runner.os }}-pip-
 
-      - name: Install dependencies
+      - name: Install Ruff
         run: |
           python -m pip install --upgrade pip
-          pip install ruff mypy
-          pip install -r requirements.txt
+          pip install ruff
 
       - name: Run Ruff (linter)
         run: ruff check src/ --output-format=github
 
       - name: Run Ruff (formatter check)
-        run: ruff format src/ --check
-
-      - name: Run MyPy (type check)
-        run: mypy src/ --ignore-missing-imports --no-error-summary || true
-        continue-on-error: true
+        run: ruff format src/ --check --diff
 
   # ============================================================================
-  # TESTS
+  # TYPE CHECK - MyPy Static Type Checking
+  # ============================================================================
+  # Verificación de tipos ESTRICTA usando pyproject.toml
+  #
+  # Niveles de verificación:
+  #   - ESTRICTO: src/core/, src/api/schemas.py, src/api/health.py
+  #   - MODERADO: src/services/, src/database/, src/utils/
+  #   - PERMISIVO: src/bot/handlers/ (migración gradual)
+  # ============================================================================
+  typecheck:
+    name: Type Check (MyPy)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-typecheck-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-typecheck-
+            ${{ runner.os }}-pip-
+
+      - name: Cache MyPy
+        uses: actions/cache@v4
+        with:
+          path: .mypy_cache
+          key: ${{ runner.os }}-mypy-${{ hashFiles('src/**/*.py') }}
+          restore-keys: |
+            ${{ runner.os }}-mypy-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mypy
+          pip install -r requirements.txt
+
+      # ----------------------------------------------------------------
+      # MyPy ESTRICTO - Usa configuración de pyproject.toml
+      # Falla el CI si hay errores de tipos en módulos críticos
+      # ----------------------------------------------------------------
+      - name: Run MyPy (strict mode)
+        run: |
+          echo "🔍 Running MyPy with pyproject.toml configuration..."
+          echo ""
+          mypy src/ --config-file pyproject.toml
+          echo ""
+          echo "✅ Type checking passed!"
+
+      # ----------------------------------------------------------------
+      # Reporte de tipos (informativo)
+      # ----------------------------------------------------------------
+      - name: Generate type coverage report
+        if: always()
+        run: |
+          echo "📊 Type Coverage Summary"
+          echo "========================"
+          mypy src/ --config-file pyproject.toml --txt-report mypy-report || true
+          if [ -f mypy-report/index.txt ]; then
+            cat mypy-report/index.txt
+          fi
+
+  # ============================================================================
+  # TESTS - Pytest with Coverage
   # ============================================================================
   test:
-    name: Run Tests
+    name: Tests (Pytest)
     runs-on: ubuntu-latest
-    needs: lint
+    needs: [lint, typecheck]
 
     services:
       postgres:
-        image: postgres:15
+        image: postgres:15-alpine
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -86,33 +171,40 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-pip-test-${{ hashFiles('requirements.txt') }}
           restore-keys: |
+            ${{ runner.os }}-pip-test-
             ${{ runner.os }}-pip-
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-asyncio pytest-cov httpx aiosqlite
+          pip install pytest pytest-asyncio pytest-cov httpx aiosqlite factory-boy
 
       - name: Run tests with coverage
         env:
           ENVIRONMENT: development
-          DATABASE_URL: sqlite:///test.db
-          TELEGRAM_BOT_TOKEN: test_token
-          SECRET_KEY: test_secret_key_for_testing
+          DATABASE_URL: sqlite+aiosqlite:///test.db
+          TELEGRAM_BOT_TOKEN: test_token_for_ci
+          SECRET_KEY: test_secret_key_for_testing_ci_pipeline
         run: |
-          pytest tests/ -v --cov=src --cov-report=xml --cov-report=term-missing
+          pytest tests/ \
+            -v \
+            --cov=src \
+            --cov-report=xml \
+            --cov-report=term-missing \
+            --cov-fail-under=80
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
+          verbose: true
 
   # ============================================================================
-  # SECURITY SCAN
+  # SECURITY SCAN - Bandit & Safety
   # ============================================================================
   security:
     name: Security Scan
@@ -128,21 +220,33 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install security tools
         run: |
           python -m pip install --upgrade pip
-          pip install bandit safety
+          pip install bandit safety pip-audit
 
       - name: Run Bandit (security linter)
-        run: bandit -r src/ -ll -ii -x tests/ || true
-        continue-on-error: true
+        run: |
+          echo "🔒 Running Bandit security scan..."
+          bandit -r src/ -ll -ii -x tests/ -f json -o bandit-report.json || true
+          bandit -r src/ -ll -ii -x tests/
 
-      - name: Check dependencies for vulnerabilities
-        run: safety check -r requirements.txt || true
-        continue-on-error: true
+      - name: Check dependencies for vulnerabilities (pip-audit)
+        run: |
+          echo "🔍 Running pip-audit..."
+          pip-audit -r requirements.txt --strict || true
+
+      - name: Upload security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+          retention-days: 30
 
   # ============================================================================
-  # BUILD
+  # BUILD - Verify Imports & Structure
   # ============================================================================
   build:
     name: Build Check
@@ -163,20 +267,30 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Verify imports
+      - name: Verify module imports
         run: |
-          python -c "from src.bot.main import main; print('Bot module OK')"
-          python -c "from src.database.models import User, Invoice; print('Models OK')"
-          python -c "from src.core.context import AppContext; print('Core OK')"
+          echo "🔍 Verifying module imports..."
+          python -c "from src.bot.main import main; print('✅ Bot module OK')"
+          python -c "from src.database.models import User, Invoice; print('✅ Models OK')"
+          python -c "from src.core.context import AppContext; print('✅ Core OK')"
+          python -c "from src.api.app import app; print('✅ API OK')"
+          python -c "from src.services.n8n_service import N8NService; print('✅ Services OK')"
+          echo ""
+          echo "✅ All imports verified successfully!"
 
-      - name: Build artifact info
+      - name: Build info
         run: |
-          echo "Build successful!"
-          echo "Python version: $(python --version)"
+          echo "=================================="
+          echo "📦 Build Information"
+          echo "=================================="
+          echo "Python: $(python --version)"
           echo "Commit: ${{ github.sha }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Event:  ${{ github.event_name }}"
+          echo "=================================="
 
   # ============================================================================
-  # DOCKER BUILD (optional)
+  # DOCKER BUILD
   # ============================================================================
   docker:
     name: Docker Build
@@ -196,12 +310,22 @@ jobs:
         with:
           context: .
           push: false
-          tags: jewelry-invoice-bot:${{ github.sha }}
+          tags: |
+            jewelry-invoice-bot:${{ github.sha }}
+            jewelry-invoice-bot:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+      - name: Test Docker image
+        run: |
+          echo "🐳 Testing Docker image..."
+          docker run --rm jewelry-invoice-bot:${{ github.sha }} python -c "print('Docker image OK')"
 
   # ============================================================================
-  # DEPLOY (placeholder)
+  # DEPLOY
   # ============================================================================
   deploy:
     name: Deploy
@@ -216,8 +340,15 @@ jobs:
 
       - name: Deploy notification
         run: |
+          echo "=================================="
           echo "🚀 Ready for deployment!"
+          echo "=================================="
           echo "Commit: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref }}"
-          # Add actual deployment steps here
-          # e.g., SSH to server, docker-compose pull, etc.
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Author: ${{ github.actor }}"
+          echo "=================================="
+          # Add actual deployment steps here:
+          # - SSH to server
+          # - docker-compose pull && docker-compose up -d
+          # - Health check verification
+          # - Rollback on failure

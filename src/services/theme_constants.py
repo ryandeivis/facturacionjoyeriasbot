@@ -6,7 +6,7 @@ Preparado para soportar múltiples temas/tenants en el futuro.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TypedDict
 
 
 @dataclass(frozen=True)
@@ -114,10 +114,19 @@ PARADISE_GROUP_TEXTS = InvoiceTexts(
 # TEMA FACTORY - Para soportar múltiples tenants en el futuro
 # ============================================================================
 
+
+class ThemeDict(TypedDict):
+    """Estructura tipada de un tema completo."""
+    colors: ThemeColors
+    fonts: ThemeFonts
+    company: CompanyInfo
+    texts: InvoiceTexts
+
+
 class ThemeFactory:
     """Factory para obtener temas por nombre/tenant."""
 
-    _themes = {
+    _themes: dict[str, ThemeDict] = {
         "paradise_group": {
             "colors": PARADISE_GROUP_COLORS,
             "fonts": PARADISE_GROUP_FONTS,
@@ -126,10 +135,10 @@ class ThemeFactory:
         }
     }
 
-    _default = "paradise_group"
+    _default: str = "paradise_group"
 
     @classmethod
-    def get_theme(cls, name: str = None):
+    def get_theme(cls, name: Optional[str] = None) -> ThemeDict:
         """
         Obtiene un tema por nombre.
 
@@ -137,28 +146,28 @@ class ThemeFactory:
             name: Nombre del tema (o None para default)
 
         Returns:
-            Dict con colors, fonts, company, texts
+            ThemeDict con colors, fonts, company, texts
         """
         theme_name = name or cls._default
         return cls._themes.get(theme_name, cls._themes[cls._default])
 
     @classmethod
-    def get_colors(cls, name: str = None) -> ThemeColors:
+    def get_colors(cls, name: Optional[str] = None) -> ThemeColors:
         """Obtiene los colores del tema."""
         return cls.get_theme(name)["colors"]
 
     @classmethod
-    def get_fonts(cls, name: str = None) -> ThemeFonts:
+    def get_fonts(cls, name: Optional[str] = None) -> ThemeFonts:
         """Obtiene las fuentes del tema."""
         return cls.get_theme(name)["fonts"]
 
     @classmethod
-    def get_company(cls, name: str = None) -> CompanyInfo:
+    def get_company(cls, name: Optional[str] = None) -> CompanyInfo:
         """Obtiene la info de la empresa del tema."""
         return cls.get_theme(name)["company"]
 
     @classmethod
-    def get_texts(cls, name: str = None) -> InvoiceTexts:
+    def get_texts(cls, name: Optional[str] = None) -> InvoiceTexts:
         """Obtiene los textos del tema."""
         return cls.get_theme(name)["texts"]
 
@@ -170,7 +179,7 @@ class ThemeFactory:
         fonts: ThemeFonts,
         company: CompanyInfo,
         texts: InvoiceTexts
-    ):
+    ) -> None:
         """
         Registra un nuevo tema (para SaaS multi-tenant).
 
@@ -181,12 +190,12 @@ class ThemeFactory:
             company: Info de empresa
             texts: Textos
         """
-        cls._themes[name] = {
-            "colors": colors,
-            "fonts": fonts,
-            "company": company,
-            "texts": texts
-        }
+        cls._themes[name] = ThemeDict(
+            colors=colors,
+            fonts=fonts,
+            company=company,
+            texts=texts
+        )
 
 
 # Alias para acceso rápido

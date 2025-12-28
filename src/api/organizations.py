@@ -68,29 +68,45 @@ class OrganizationService:
         offset: int = 0,
         include_inactive: bool = False
     ) -> List[Dict[str, Any]]:
-        """Lista todas las organizaciones."""
+        """
+        Lista todas las organizaciones.
+
+        Args:
+            limit: Número máximo de resultados
+            offset: Offset para paginación
+            include_inactive: Incluir organizaciones inactivas
+
+        Returns:
+            Lista de organizaciones con sus datos
+        """
         try:
             from src.database.connection import get_async_db
-            from src.database.models import TenantConfig, User, Invoice
+            from src.database.models import Organization, TenantConfig, User, Invoice
             from sqlalchemy import select, func
+            from sqlalchemy.orm import selectinload
 
             async with get_async_db() as db:
-                query = select(TenantConfig)
-                if not include_inactive:
-                    query = query.where(TenantConfig.is_active == True)
+                # Usar Organization como entidad principal (tiene status, plan, etc.)
+                query = select(Organization).options(
+                    selectinload(Organization.configs)
+                )
 
-                query = query.order_by(TenantConfig.created_at.desc())
+                if not include_inactive:
+                    query = query.where(Organization.status == "active")
+
+                query = query.where(Organization.is_deleted == False)
+                query = query.order_by(Organization.created_at.desc())
                 query = query.limit(limit).offset(offset)
 
                 result = await db.execute(query)
-                configs = result.scalars().all()
+                organizations = result.scalars().all()
 
                 orgs = []
-                for config in configs:
+                for org in organizations:
                     # Contar usuarios
                     users_result = await db.execute(
                         select(func.count(User.id)).where(
-                            User.organization_id == config.organization_id,
+                            User.organization_id == org.id,
                             User.is_deleted == False
                         )
                     )
@@ -99,21 +115,26 @@ class OrganizationService:
                     # Contar facturas
                     invoices_result = await db.execute(
                         select(func.count(Invoice.id)).where(
-                            Invoice.organization_id == config.organization_id,
+                            Invoice.organization_id == org.id,
                             Invoice.is_deleted == False
                         )
                     )
                     invoices_count = invoices_result.scalar() or 0
 
+                    # Obtener invoice_prefix del TenantConfig si existe
+                    invoice_prefix = "FAC"
+                    if org.configs:
+                        invoice_prefix = str(org.configs.invoice_prefix)
+
                     orgs.append({
-                        "id": config.organization_id,
-                        "name": config.organization_name,
-                        "plan": config.plan,
-                        "invoice_prefix": config.invoice_prefix,
-                        "is_active": config.is_active,
+                        "id": org.id,
+                        "name": org.name,
+                        "plan": org.plan,
+                        "invoice_prefix": invoice_prefix,
+                        "is_active": org.status == "active",
                         "users_count": users_count,
                         "invoices_count": invoices_count,
-                        "created_at": config.created_at.isoformat() + "Z"
+                        "created_at": org.created_at.isoformat() + "Z" if org.created_at else None
                     })
 
                 return orgs
@@ -123,21 +144,33 @@ class OrganizationService:
             raise
 
     async def get_organization(self, org_id: str) -> Optional[Dict[str, Any]]:
-        """Obtiene una organización por ID."""
+        """
+        Obtiene una organización por ID.
+
+        Args:
+            org_id: ID de la organización
+
+        Returns:
+            Diccionario con datos de la organización o None si no existe
+        """
         try:
             from src.database.connection import get_async_db
-            from src.database.models import TenantConfig, User, Invoice
+            from src.database.models import Organization, TenantConfig, User, Invoice
             from sqlalchemy import select, func
+            from sqlalchemy.orm import selectinload
 
             async with get_async_db() as db:
                 result = await db.execute(
-                    select(TenantConfig).where(
-                        TenantConfig.organization_id == org_id
+                    select(Organization)
+                    .options(selectinload(Organization.configs))
+                    .where(
+                        Organization.id == org_id,
+                        Organization.is_deleted == False
                     )
                 )
-                config = result.scalar_one_or_none()
+                org = result.scalar_one_or_none()
 
-                if not config:
+                if not org:
                     return None
 
                 # Contar usuarios
@@ -160,19 +193,24 @@ class OrganizationService:
 
                 # Obtener límites del plan
                 plan_limits = PLAN_CONFIGS.get(
-                    PlanTier(config.plan),
+                    PlanTier(str(org.plan)),
                     PLAN_CONFIGS[PlanTier.BASIC]
                 )
 
+                # Obtener invoice_prefix del TenantConfig si existe
+                invoice_prefix = "FAC"
+                if org.configs:
+                    invoice_prefix = str(org.configs.invoice_prefix)
+
                 return {
-                    "id": config.organization_id,
-                    "name": config.organization_name,
-                    "plan": config.plan,
-                    "invoice_prefix": config.invoice_prefix,
-                    "is_active": config.is_active,
+                    "id": org.id,
+                    "name": org.name,
+                    "plan": org.plan,
+                    "invoice_prefix": invoice_prefix,
+                    "is_active": org.status == "active",
                     "users_count": users_count,
                     "invoices_count": invoices_count,
-                    "created_at": config.created_at.isoformat() + "Z",
+                    "created_at": org.created_at.isoformat() + "Z" if org.created_at else None,
                     "plan_limits": {
                         "invoices_per_month": plan_limits.invoices_per_month,
                         "users_per_org": plan_limits.users_per_org,
@@ -192,25 +230,46 @@ class OrganizationService:
             raise
 
     async def create_organization(self, data: OrganizationCreate) -> Dict[str, Any]:
-        """Crea una nueva organización."""
+        """
+        Crea una nueva organización con su configuración de tenant.
+
+        Args:
+            data: Datos para crear la organización
+
+        Returns:
+            Diccionario con datos de la organización creada
+        """
         try:
             import uuid
             from src.database.connection import get_async_db
-            from src.database.models import TenantConfig
+            from src.database.models import Organization, TenantConfig
 
             org_id = str(uuid.uuid4())
+            # Generar slug único a partir del nombre
+            slug = data.name.lower().replace(" ", "-")[:50]
+            slug = f"{slug}-{org_id[:8]}"
 
             async with get_async_db() as db:
+                # Crear Organization primero
+                org = Organization(
+                    id=org_id,
+                    name=data.name,
+                    slug=slug,
+                    plan=data.plan,
+                    status="active",
+                    settings=data.settings
+                )
+                db.add(org)
+
+                # Crear TenantConfig asociado
                 config = TenantConfig(
                     organization_id=org_id,
-                    organization_name=data.name,
-                    plan=data.plan,
-                    invoice_prefix=data.invoice_prefix,
-                    is_active=True
+                    invoice_prefix=data.invoice_prefix
                 )
                 db.add(config)
+
                 await db.commit()
-                await db.refresh(config)
+                await db.refresh(org)
 
                 logger.info(f"Organización creada: {org_id} ({data.name})")
 
@@ -220,7 +279,7 @@ class OrganizationService:
                     "plan": data.plan,
                     "invoice_prefix": data.invoice_prefix,
                     "is_active": True,
-                    "created_at": config.created_at.isoformat() + "Z"
+                    "created_at": org.created_at.isoformat() + "Z" if org.created_at else None
                 }
 
         except Exception as e:
@@ -232,35 +291,50 @@ class OrganizationService:
         org_id: str,
         data: OrganizationUpdate
     ) -> Optional[Dict[str, Any]]:
-        """Actualiza una organización."""
+        """
+        Actualiza una organización.
+
+        Args:
+            org_id: ID de la organización
+            data: Datos a actualizar
+
+        Returns:
+            Diccionario con datos actualizados o None si no existe
+        """
         try:
             from src.database.connection import get_async_db
-            from src.database.models import TenantConfig
+            from src.database.models import Organization, TenantConfig
             from sqlalchemy import select
+            from sqlalchemy.orm import selectinload
 
             async with get_async_db() as db:
                 result = await db.execute(
-                    select(TenantConfig).where(
-                        TenantConfig.organization_id == org_id
+                    select(Organization)
+                    .options(selectinload(Organization.configs))
+                    .where(
+                        Organization.id == org_id,
+                        Organization.is_deleted == False
                     )
                 )
-                config = result.scalar_one_or_none()
+                org = result.scalar_one_or_none()
 
-                if not config:
+                if not org:
                     return None
 
-                # Actualizar campos
+                # Actualizar campos de Organization
                 if data.name is not None:
-                    config.organization_name = data.name
+                    org.name = data.name  # type: ignore[assignment]
                 if data.plan is not None:
-                    config.plan = data.plan
-                if data.invoice_prefix is not None:
-                    config.invoice_prefix = data.invoice_prefix
+                    org.plan = data.plan  # type: ignore[assignment]
                 if data.is_active is not None:
-                    config.is_active = data.is_active
+                    org.status = "active" if data.is_active else "suspended"  # type: ignore[assignment]
+
+                # Actualizar TenantConfig si existe
+                if data.invoice_prefix is not None and org.configs:
+                    org.configs.invoice_prefix = data.invoice_prefix
 
                 await db.commit()
-                await db.refresh(config)
+                await db.refresh(org)
 
                 logger.info(f"Organización actualizada: {org_id}")
 

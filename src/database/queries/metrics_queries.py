@@ -162,7 +162,7 @@ def get_event_counts(
             'total_value': float(row.total_value or 0),
             'success_count': row.success_count,
             'error_count': row.error_count,
-            'success_rate': row.success_count / row.count if row.count > 0 else 0,
+            'success_rate': (row.success_count / row.count) if row.count else 0,
             'avg_duration_ms': float(row.avg_duration_ms or 0),
         }
         for row in rows
@@ -221,7 +221,7 @@ def get_daily_stats(
             'count': row.count,
             'total_value': float(row.total_value or 0),
             'success_count': row.success_count,
-            'success_rate': row.success_count / row.count if row.count > 0 else 0,
+            'success_rate': (row.success_count / row.count) if row.count else 0,
         }
         for row in rows
     ]
@@ -265,10 +265,12 @@ def get_hourly_distribution(
     rows = result.all()
 
     # Inicializar todas las horas con 0
-    distribution = {h: 0 for h in range(24)}
+    distribution: Dict[int, int] = {h: 0 for h in range(24)}
     for row in rows:
         if row.hour is not None:
-            distribution[int(row.hour)] = row.count
+            hour_val = int(row.hour) if row.hour else 0
+            count_val = int(row.count) if row.count else 0  # type: ignore[call-overload]
+            distribution[hour_val] = count_val
 
     return distribution
 
@@ -398,15 +400,13 @@ def cleanup_old_events(
     cutoff = datetime.utcnow() - timedelta(days=retention_days)
 
     try:
-        result = db.execute(
-            MetricEvent.__table__.delete().where(
-                MetricEvent.created_at < cutoff
-            )
-        )
+        from sqlalchemy import delete
+        stmt = delete(MetricEvent).where(MetricEvent.created_at < cutoff)
+        result = db.execute(stmt)
         db.commit()
-        deleted = result.rowcount
+        deleted = result.rowcount  # type: ignore[attr-defined]
         logger.info(f"Limpiados {deleted} eventos de métricas antiguos")
-        return deleted
+        return int(deleted) if deleted else 0
     except Exception as e:
         logger.error(f"Error limpiando eventos: {e}")
         db.rollback()
@@ -487,7 +487,7 @@ async def async_get_event_counts(
             'total_value': float(row.total_value or 0),
             'success_count': row.success_count,
             'error_count': row.error_count,
-            'success_rate': row.success_count / row.count if row.count > 0 else 0,
+            'success_rate': (row.success_count / row.count) if row.count else 0,
             'avg_duration_ms': float(row.avg_duration_ms or 0),
         }
         for row in rows

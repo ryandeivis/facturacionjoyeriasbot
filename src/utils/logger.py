@@ -334,11 +334,11 @@ class LogContext:
         self.action = action
         self.auto_correlation = auto_correlation
 
-        # Guardar valores anteriores
-        self._prev_correlation = None
-        self._prev_org = None
-        self._prev_user = None
-        self._prev_action = None
+        # Guardar valores anteriores (Optional[str] para ContextVar.get())
+        self._prev_correlation: Optional[str] = None
+        self._prev_org: Optional[str] = None
+        self._prev_user: Optional[str] = None
+        self._prev_action: Optional[str] = None
 
     def __enter__(self):
         # Guardar estado anterior
@@ -449,7 +449,7 @@ class AuditLogger:
             new_values: Valores nuevos (para creates/updates)
             status: Estado de la acción (success, failure, error)
         """
-        audit_data = {
+        audit_data: Dict[str, Any] = {
             "action": action,
             "status": status,
             "timestamp": datetime.utcnow().isoformat() + "Z",

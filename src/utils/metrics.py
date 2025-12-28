@@ -7,7 +7,7 @@ Compatible con Prometheus cuando está disponible.
 
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, cast, Union
 from dataclasses import dataclass, field
 from collections import defaultdict
 from functools import wraps
@@ -183,9 +183,9 @@ class Histogram:
         for bucket in sorted(self.buckets):
             accumulated += self._counts[key].get(bucket, 0)
             if accumulated >= target_count:
-                return bucket
+                return float(bucket)
 
-        return self.buckets[-1]
+        return float(self.buckets[-1])
 
     def get_stats(self, labels: Dict[str, str] = None) -> Dict[str, Any]:
         """Obtiene estadísticas del histograma."""
@@ -291,28 +291,28 @@ class MetricsRegistry:
         with self._lock:
             if name not in self._metrics:
                 self._metrics[name] = Counter(name, description)
-            return self._metrics[name]
+            return cast(Counter, self._metrics[name])
 
     def gauge(self, name: str, description: str = "") -> Gauge:
         """Crea o obtiene un Gauge."""
         with self._lock:
             if name not in self._metrics:
                 self._metrics[name] = Gauge(name, description)
-            return self._metrics[name]
+            return cast(Gauge, self._metrics[name])
 
     def histogram(self, name: str, description: str = "", buckets: tuple = None) -> Histogram:
         """Crea o obtiene un Histogram."""
         with self._lock:
             if name not in self._metrics:
                 self._metrics[name] = Histogram(name, description, buckets)
-            return self._metrics[name]
+            return cast(Histogram, self._metrics[name])
 
     def summary(self, name: str, description: str = "") -> Summary:
         """Crea o obtiene un Summary."""
         with self._lock:
             if name not in self._metrics:
                 self._metrics[name] = Summary(name, description)
-            return self._metrics[name]
+            return cast(Summary, self._metrics[name])
 
     def get_all(self) -> Dict[str, Any]:
         """Obtiene todas las métricas."""
@@ -505,7 +505,7 @@ class Timer:
     ):
         self.histogram = histogram or request_duration
         self.labels = labels
-        self._start = None
+        self._start: Optional[float] = None
 
     def __enter__(self):
         self._start = time.time()

@@ -30,7 +30,7 @@ class ComponentHealth:
     details: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        result = {
+        result: Dict[str, Any] = {
             "name": self.name,
             "status": self.status,
         }

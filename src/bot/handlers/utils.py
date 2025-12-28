@@ -5,7 +5,7 @@ Funciones utilitarias compartidas entre handlers.
 Separado de shared.py para seguir el principio de responsabilidad única.
 """
 
-from typing import Optional
+from typing import Optional, Any, cast
 from .constants import INVOICE_CONTEXT_KEYS
 
 
@@ -30,7 +30,7 @@ def limpiar_sesion(context) -> None:
     context.user_data.clear()
 
 
-def is_authenticated(context) -> bool:
+def is_authenticated(context: Any) -> bool:
     """
     Verifica si el usuario está autenticado.
 
@@ -40,7 +40,7 @@ def is_authenticated(context) -> bool:
     Returns:
         True si está autenticado, False en caso contrario
     """
-    return context.user_data.get('autenticado', False)
+    return bool(context.user_data.get('autenticado', False))
 
 
 def get_user_info(context) -> dict:
@@ -112,7 +112,7 @@ def format_invoice_status(estado: str) -> str:
     return estados.get(estado, estado)
 
 
-def get_organization_id(context) -> Optional[int]:
+def get_organization_id(context: Any) -> Optional[str]:
     """
     Obtiene el organization_id del usuario actual.
 
@@ -122,10 +122,11 @@ def get_organization_id(context) -> Optional[int]:
     Returns:
         organization_id o None si no está autenticado
     """
-    return context.user_data.get('organization_id')
+    org_id = context.user_data.get('organization_id')
+    return str(org_id) if org_id is not None else None
 
 
-def get_user_id(context) -> Optional[int]:
+def get_user_id(context: Any) -> Optional[int]:
     """
     Obtiene el user_id del usuario actual.
 
@@ -135,4 +136,5 @@ def get_user_id(context) -> Optional[int]:
     Returns:
         user_id o None si no está autenticado
     """
-    return context.user_data.get('user_id')
+    user_id = context.user_data.get('user_id')
+    return int(user_id) if user_id is not None else None

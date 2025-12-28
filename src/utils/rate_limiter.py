@@ -387,10 +387,13 @@ def check_login_rate(user_id: int) -> Tuple[bool, str]:
     """
     Verifica rate limit para login.
 
+    Args:
+        user_id: ID del usuario (Telegram ID)
+
     Returns:
         Tupla (permitido, mensaje_error)
     """
-    allowed = rate_limiter.allow(OperationType.LOGIN_ATTEMPT.value, user_id)
+    allowed = rate_limiter.allow(OperationType.LOGIN_ATTEMPT.value, str(user_id))
     if not allowed:
         message = rate_limiter.get_message(OperationType.LOGIN_ATTEMPT.value)
         return False, message
@@ -445,10 +448,13 @@ def check_message_rate(user_id: int) -> Tuple[bool, str]:
     """
     Verifica rate limit para mensajes generales.
 
+    Args:
+        user_id: ID del usuario (Telegram ID)
+
     Returns:
         Tupla (permitido, mensaje_error)
     """
-    allowed = rate_limiter.allow(OperationType.MESSAGE.value, user_id)
+    allowed = rate_limiter.allow(OperationType.MESSAGE.value, str(user_id))
     if not allowed:
         message = rate_limiter.get_message(OperationType.MESSAGE.value)
         return False, message

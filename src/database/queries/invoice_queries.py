@@ -43,7 +43,7 @@ def generate_invoice_number(db: Session, org_id: Optional[str] = None) -> str:
             TenantConfig.organization_id == org_id
         ).first()
         if config:
-            prefix = config.invoice_prefix
+            prefix = config.invoice_prefix  # type: ignore[assignment]
 
     prefix_pattern = f"{prefix}-{now.strftime('%Y%m')}-"
 
@@ -197,9 +197,9 @@ def update_invoice_status(
     try:
         invoice = get_invoice_by_id(db, invoice_id, org_id)
         if invoice:
-            invoice.estado = status
+            invoice.estado = status  # type: ignore[assignment]
             if status == "PAGADA":
-                invoice.fecha_pago = datetime.utcnow()
+                invoice.fecha_pago = datetime.utcnow()  # type: ignore[assignment]
             db.commit()
             logger.info(f"Factura {invoice.numero_factura} actualizada a {status}")
             return True
@@ -231,16 +231,16 @@ async def generate_invoice_number_async(
     now = datetime.utcnow()
 
     # Obtener prefijo del tenant
-    result = await db.execute(
+    config_result = await db.execute(
         select(TenantConfig).where(TenantConfig.organization_id == org_id)
     )
-    config = result.scalar_one_or_none()
+    config = config_result.scalar_one_or_none()
     prefix = config.invoice_prefix if config else settings.INVOICE_PREFIX
 
     prefix_pattern = f"{prefix}-{now.strftime('%Y%m')}-"
 
     # Buscar última factura del mes
-    result = await db.execute(
+    invoice_result = await db.execute(
         select(Invoice)
         .where(
             and_(
@@ -252,10 +252,12 @@ async def generate_invoice_number_async(
         .order_by(Invoice.numero_factura.desc())
         .limit(1)
     )
-    last_invoice = result.scalar_one_or_none()
+    last_invoice = invoice_result.scalar_one_or_none()
 
     if last_invoice:
-        last_num = int(last_invoice.numero_factura.split("-")[-1])
+        # SQLAlchemy Column[str] es str en runtime
+        numero = str(last_invoice.numero_factura)
+        last_num = int(numero.split("-")[-1])
         new_num = last_num + 1
     else:
         new_num = 1
@@ -451,9 +453,9 @@ async def update_invoice_status_async(
     try:
         invoice = await get_invoice_by_id_async(db, invoice_id, org_id)
         if invoice:
-            invoice.estado = status
+            invoice.estado = status  # type: ignore[assignment]
             if status == "PAGADA":
-                invoice.fecha_pago = datetime.utcnow()
+                invoice.fecha_pago = datetime.utcnow()  # type: ignore[assignment]
             await db.commit()
             logger.info(f"Factura {invoice.numero_factura} actualizada a {status}")
             return True
@@ -543,6 +545,6 @@ async def get_invoice_stats_async(
             )
         )
     )
-    stats["total_ventas"] = ventas_result.scalar() or 0.0
+    stats["total_ventas"] = ventas_result.scalar() or 0.0  # type: ignore[assignment]
 
     return stats
