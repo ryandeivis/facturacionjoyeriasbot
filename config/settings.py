@@ -50,11 +50,17 @@ class Settings(BaseSettings):
     # BASE DE DATOS
     # =========================================================================
     DATABASE_URL: str = "sqlite+aiosqlite:///jewelry_invoices.db"
-    DATABASE_POOL_SIZE: int = 5
-    DATABASE_MAX_OVERFLOW: int = 10
-    DATABASE_POOL_RECYCLE: int = 3600
     DATABASE_ECHO: bool = False
-    DATABASE_CONNECT_TIMEOUT: int = 10
+
+    # Pool de conexiones - Configuración por entorno
+    # Desarrollo: valores bajos para recursos locales
+    # Producción: valores altos para concurrencia
+    DATABASE_POOL_SIZE: int = 5  # Conexiones base (dev: 5, prod: 30)
+    DATABASE_MAX_OVERFLOW: int = 10  # Conexiones extra en picos (dev: 10, prod: 20)
+    DATABASE_POOL_TIMEOUT: int = 30  # Segundos máximos esperando conexión
+    DATABASE_POOL_RECYCLE: int = 1800  # Reciclar conexiones cada 30 min (evita stale)
+    DATABASE_POOL_PRE_PING: bool = True  # Verificar conexión antes de usar
+    DATABASE_CONNECT_TIMEOUT: int = 10  # Timeout de conexión inicial
 
     # =========================================================================
     # N8N INTEGRATION

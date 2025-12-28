@@ -75,8 +75,14 @@ class EventType(str, Enum):
 # ============================================================================
 
 @dataclass
-class MetricEvent:
-    """Representa un evento métrico."""
+class MetricEventData:
+    """
+    Representa un evento métrico en memoria.
+
+    Nota: Esta clase es diferente del modelo SQLAlchemy MetricEvent
+    en src.database.models. Esta se usa para almacenamiento en memoria,
+    mientras que el modelo de BD se usa para persistencia.
+    """
 
     event_type: EventType
     timestamp: datetime
@@ -251,7 +257,7 @@ class MetricsCollector:
         self._persist_to_db = persist_to_db
 
         # Eventos recientes (para análisis detallado)
-        self._events: List[MetricEvent] = []
+        self._events: List[MetricEventData] = []
         self._events_lock = asyncio.Lock()
 
         # Contadores agregados por tipo y org
@@ -295,7 +301,7 @@ class MetricsCollector:
             duration_ms: Duración en milisegundos
             metadata: Datos adicionales
         """
-        event = MetricEvent(
+        event = MetricEventData(
             event_type=event_type,
             timestamp=datetime.utcnow(),
             organization_id=organization_id,
@@ -351,7 +357,7 @@ class MetricsCollector:
         organization_id: Optional[str] = None,
         since: Optional[datetime] = None,
         limit: int = 100,
-    ) -> List[MetricEvent]:
+    ) -> List[MetricEventData]:
         """
         Obtiene eventos filtrados.
 

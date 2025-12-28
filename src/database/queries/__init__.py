@@ -50,6 +50,24 @@ from src.database.queries.invoice_queries import (
     get_invoice_stats_async,
 )
 
+# Queries de métricas - Sync
+from src.database.queries.metrics_queries import (
+    create_metric_event,
+    get_recent_events,
+    get_event_counts,
+    get_daily_stats,
+    get_hourly_distribution,
+    get_organization_summary,
+    get_global_summary,
+    cleanup_old_events,
+)
+
+# Queries de métricas - Async
+from src.database.queries.metrics_queries import (
+    async_create_metric_event,
+    async_get_event_counts,
+)
+
 __all__ = [
     # Base
     'BaseQuery',
@@ -83,4 +101,16 @@ __all__ = [
     'update_invoice_status_async',
     'soft_delete_invoice_async',
     'get_invoice_stats_async',
+    # Metrics sync
+    'create_metric_event',
+    'get_recent_events',
+    'get_event_counts',
+    'get_daily_stats',
+    'get_hourly_distribution',
+    'get_organization_summary',
+    'get_global_summary',
+    'cleanup_old_events',
+    # Metrics async
+    'async_create_metric_event',
+    'async_get_event_counts',
 ]

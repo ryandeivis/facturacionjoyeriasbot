@@ -371,6 +371,17 @@ class LogContext:
         return False
 
 
+def _is_coroutine_function(func) -> bool:
+    """
+    Verifica si una función es async (coroutine).
+
+    Se define antes del decorador que la usa para mantener
+    el orden lógico del código.
+    """
+    import asyncio
+    return asyncio.iscoroutinefunction(func)
+
+
 def with_context(**context_kwargs):
     """
     Decorador para establecer contexto de logging en una función.
@@ -391,17 +402,11 @@ def with_context(**context_kwargs):
             with LogContext(**context_kwargs):
                 return func(*args, **kwargs)
 
-        if asyncio_iscoroutinefunction(func):
+        if _is_coroutine_function(func):
             return async_wrapper
         return sync_wrapper
 
     return decorator
-
-
-def asyncio_iscoroutinefunction(func) -> bool:
-    """Verifica si una función es async."""
-    import asyncio
-    return asyncio.iscoroutinefunction(func)
 
 
 # ============================================================================

@@ -48,14 +48,16 @@ def init_db() -> None:
             connect_args={"check_same_thread": False}
         )
     else:
-        # PostgreSQL con connection pooling
+        # PostgreSQL con connection pooling optimizado
         engine = create_engine(
             database_url,
             echo=settings.DATABASE_ECHO,
+            poolclass=QueuePool,
             pool_size=settings.DATABASE_POOL_SIZE,
             max_overflow=settings.DATABASE_MAX_OVERFLOW,
+            pool_timeout=settings.DATABASE_POOL_TIMEOUT,
             pool_recycle=settings.DATABASE_POOL_RECYCLE,
-            pool_pre_ping=True
+            pool_pre_ping=settings.DATABASE_POOL_PRE_PING,
         )
 
     SessionLocal = sessionmaker(
@@ -88,14 +90,15 @@ def init_async_db() -> None:
             connect_args={"check_same_thread": False}
         )
     else:
-        # PostgreSQL async con connection pooling
+        # PostgreSQL async con connection pooling optimizado
         async_engine = create_async_engine(
             database_url,
             echo=settings.DATABASE_ECHO,
             pool_size=settings.DATABASE_POOL_SIZE,
             max_overflow=settings.DATABASE_MAX_OVERFLOW,
+            pool_timeout=settings.DATABASE_POOL_TIMEOUT,
             pool_recycle=settings.DATABASE_POOL_RECYCLE,
-            pool_pre_ping=True
+            pool_pre_ping=settings.DATABASE_POOL_PRE_PING,
         )
 
     AsyncSessionLocal = async_sessionmaker(

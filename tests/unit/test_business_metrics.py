@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from src.metrics.collectors import (
     MetricsCollector,
     EventType,
-    MetricEvent,
+    MetricEventData,
     MetricCounter,
 )
 from src.metrics.aggregators import (
@@ -210,7 +210,7 @@ class TestMetricsAggregator:
 
     def test_aggregate_event(self, aggregator):
         """Test agregación de evento."""
-        event = MetricEvent(
+        event = MetricEventData(
             event_type=EventType.INVOICE_CREATED,
             timestamp=datetime.utcnow(),
             organization_id="org-123",
@@ -227,13 +227,13 @@ class TestMetricsAggregator:
         """Test agregación de múltiples eventos."""
         now = datetime.utcnow()
         events = [
-            MetricEvent(
+            MetricEventData(
                 event_type=EventType.INVOICE_CREATED,
                 timestamp=now,
                 organization_id="org-123",
                 metadata={"value": 100.0},
             ),
-            MetricEvent(
+            MetricEventData(
                 event_type=EventType.INVOICE_CREATED,
                 timestamp=now,
                 organization_id="org-123",
@@ -250,7 +250,7 @@ class TestMetricsAggregator:
         """Test generación de serie temporal."""
         now = datetime.utcnow()
         for i in range(5):
-            event = MetricEvent(
+            event = MetricEventData(
                 event_type=EventType.INVOICE_CREATED,
                 timestamp=now - timedelta(hours=i),
                 organization_id="org-123",

@@ -28,9 +28,10 @@ RUN groupadd -r botuser && useradd -r -g botuser botuser
 
 WORKDIR /app
 
-# Install runtime dependencies
+# Install runtime dependencies (incluye curl para health checks)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy wheels from builder
@@ -51,9 +52,15 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV ENVIRONMENT=production
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "from src.api.health import get_health_checker; import asyncio; asyncio.run(get_health_checker().liveness())" || exit 1
+# Health check HTTP - Más eficiente que Python imports
+# Usa el endpoint /health/live para verificar que el servicio está activo
+# Parámetros optimizados para producción:
+#   - interval: 30s - Verificación cada 30 segundos
+#   - timeout: 5s - Máximo 5 segundos de espera (curl es rápido)
+#   - start-period: 30s - Tiempo para que la app inicie
+#   - retries: 3 - 3 fallos consecutivos = unhealthy
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl --fail --silent --max-time 5 http://localhost:8000/health/live || exit 1
 
 # Run the bot
 CMD ["python", "-m", "src.bot.main"]

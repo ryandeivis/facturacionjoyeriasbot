@@ -341,6 +341,6 @@ class MetricEvent(Base):
             "value": self.value,
             "success": self.success,
             "duration_ms": self.duration_ms,
-            "metadata": self.metadata,
+            "metadata": self.event_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }

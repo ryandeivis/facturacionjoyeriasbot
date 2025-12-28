@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from collections import defaultdict
 
 from src.utils.logger import get_logger
-from src.metrics.collectors import EventType, MetricEvent
+from src.metrics.collectors import EventType, MetricEventData
 
 logger = get_logger(__name__)
 
@@ -191,7 +191,7 @@ class MetricsAggregator:
 
     def aggregate_event(
         self,
-        event: MetricEvent,
+        event: MetricEventData,
         period: AggregationPeriod = AggregationPeriod.HOUR
     ) -> AggregatedMetric:
         """
@@ -238,7 +238,7 @@ class MetricsAggregator:
 
     def aggregate_events(
         self,
-        events: List[MetricEvent],
+        events: List[MetricEventData],
         period: AggregationPeriod = AggregationPeriod.HOUR
     ) -> List[AggregatedMetric]:
         """

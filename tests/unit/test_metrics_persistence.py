@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch, MagicMock
 from src.metrics.collectors import (
     MetricsCollector,
     EventType,
-    MetricEvent,
+    MetricEventData,
     MetricCounter,
     set_db_persistence,
     is_db_persistence_enabled,
@@ -352,11 +352,11 @@ class TestBusinessMetricsServiceWithDb:
 
 
 class TestMetricEventDataclass:
-    """Tests para MetricEvent dataclass."""
+    """Tests para MetricEventData dataclass."""
 
     def test_to_dict(self):
         """Verifica conversión a diccionario."""
-        event = MetricEvent(
+        event = MetricEventData(
             event_type=EventType.INVOICE_CREATED,
             timestamp=datetime(2024, 1, 1, 12, 0, 0),
             organization_id="org-123",
