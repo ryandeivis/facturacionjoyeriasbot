@@ -198,6 +198,18 @@ python scripts/typecheck.py --mode=strict
 ruff format src/
 ```
 
+## Roadmap
+
+Mejoras opcionales pendientes para futuras versiones:
+
+| #  | Mejora               | Descripción                              | Prioridad |
+|----|----------------------|------------------------------------------|-----------|
+| 2  | Regenerar SECRET_KEY | Rotar clave secreta si hubo exposición   | Baja      |
+| 14 | Centralizar Logs     | Integrar con ELK, Datadog o CloudWatch   | Media     |
+| 18 | Staging Environment  | Crear ambiente de staging completo       | Media     |
+
+Ver [PLAN_20_MEJORAS_PRODUCCION.md](PLAN_20_MEJORAS_PRODUCCION.md) para detalles.
+
 ## Contribución
 
 Ver [CONTRIBUTING.md](CONTRIBUTING.md) para guías de contribución.
