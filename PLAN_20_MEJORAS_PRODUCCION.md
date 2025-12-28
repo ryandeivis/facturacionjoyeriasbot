@@ -7,7 +7,7 @@
 | Fase 1: Críticas | 1-4 | ✅ Completadas |
 | Fase 2: Alta Prioridad | 5-9 | ✅ Completadas |
 | Fase 3: Media Prioridad | 10-14 | 10-12 ✅ / 13-14 ⏳ Pendientes |
-| Fase 4: Deuda Técnica | 15-18 | ⏳ Pendientes |
+| Fase 4: Deuda Técnica | 15-18 | 15 ✅ / 16-18 ⏳ Pendientes |
 | Opcionales | A-B | 🔮 Evaluar después |
 
 ---
@@ -149,15 +149,25 @@ python-telegram-bot>=22.0  # Debería ser >=22.0,<23.0
 
 ## 🟢 FASE 4: DEUDA TÉCNICA
 
-### Mejora 15: Factory Pattern para Tests ⏳
+### Mejora 15: Factory Pattern para Tests ✅
 - **Problema:** Fixtures complejos y repetitivos
-- **Solución:** Implementar factory-boy
-```python
-class InvoiceFactory(Factory):
-    class Meta:
-        model = Invoice
-```
-- **Estado:** PENDIENTE
+- **Solución:** Implementar factory-boy con factories para todos los modelos
+- **Factories creadas:**
+  - `OrganizationFactory`, `TenantConfigFactory` - Organizaciones/Tenants
+  - `UserFactory`, `UserDictFactory` - Usuarios
+  - `InvoiceFactory`, `InvoiceItemFactory`, `InvoiceDictFactory` - Facturas
+  - `AuditLogFactory` - Logs de auditoría
+  - `MetricEventFactory` - Eventos de métricas
+- **Archivos creados:**
+  - `tests/factories/__init__.py`
+  - `tests/factories/base.py`
+  - `tests/factories/organization.py`
+  - `tests/factories/user.py`
+  - `tests/factories/invoice.py`
+  - `tests/factories/audit.py`
+  - `tests/factories/metrics.py`
+- **Tests:** `tests/unit/test_factories.py` (54 tests)
+- **Estado:** ✅ COMPLETADO
 
 ### Mejora 16: Staging Environment ⏳
 - **Problema:** Deploy directo a producción
@@ -194,8 +204,8 @@ deploy:
 |------|-----------|--------|
 | Fase 1 | Inmediato | ✅ Revocar tokens, secrets manager, CORS |
 | Fase 2 | 1 sprint | ✅ Redis, dividir invoice.py, circuit breaker |
-| Fase 3 | 2 sprints | ⏳ Pool DB, health check, MyPy, deps |
-| Fase 4 | Continuo | ⏳ Factories, staging, load tests, Docker limits |
+| Fase 3 | 2 sprints | ✅ Pool DB, health check / ⏳ MyPy, deps |
+| Fase 4 | Continuo | ✅ Factories / ⏳ staging, load tests, Docker limits |
 
 ---
 
@@ -220,17 +230,20 @@ Estas mejoras se evaluarán una vez completadas las 18 mejoras principales del p
 
 ---
 
-## Próxima Mejora: #13 - Activar MyPy Estricto en CI
+## Próxima Mejora: #16 - Staging Environment
 
-**Descripción:** MyPy está configurado pero ignorado en CI con `|| true`.
+**Descripción:** Actualmente se hace deploy directo a producción sin un ambiente intermedio para pruebas.
 
 **Cambios necesarios:**
 
-1. Remover `|| true` del comando mypy en CI
-2. Corregir errores de tipos existentes
-3. Agregar type hints faltantes
+1. Crear archivo `docker-compose.staging.yml`
+2. Configurar variables de entorno para staging
+3. Crear script de deploy para staging
+4. Documentar proceso de promoción staging → producción
 
-**Archivos a modificar:**
+**Archivos a crear/modificar:**
 
-- `.github/workflows/` o archivo de CI
-- Archivos con errores de tipos
+- `docker-compose.staging.yml`
+- `config/environments.py` - Ya tiene StagingConfig
+- `.env.staging.example`
+- Scripts de deploy
