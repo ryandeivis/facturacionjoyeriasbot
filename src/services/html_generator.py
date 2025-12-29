@@ -598,16 +598,42 @@ class HTMLGeneratorService:
             }
 
             .header-section {
-                -webkit-box-orient: vertical;
+                /* Mantener horizontal en móviles medianos */
+                -webkit-box-orient: horizontal;
                 -webkit-box-direction: normal;
-                -webkit-flex-direction: column;
-                flex-direction: column;
-                gap: 16px;
+                -webkit-flex-direction: row;
+                flex-direction: row;
+                gap: 10px;
             }
 
-            .emisor-info,
+            .emisor-info {
+                -webkit-box-flex: 1;
+                -webkit-flex: 1;
+                flex: 1;
+                padding: 16px;
+            }
+
+            .emisor-info .label {
+                font-size: 10px;
+                margin-bottom: 8px;
+            }
+
+            .emisor-info p {
+                font-size: 11px;
+                margin: 4px 0;
+            }
+
             .factura-info {
-                width: 100%;
+                padding: 14px 16px;
+            }
+
+            .factura-info td {
+                padding: 5px 8px;
+                font-size: 11px;
+            }
+
+            .factura-info td:first-child {
+                font-size: 9px;
             }
 
             .cliente-table td {
@@ -629,12 +655,47 @@ class HTMLGeneratorService:
             }
 
             .items-table {
-                font-size: 12px;
+                font-size: 11px;
             }
 
             .items-table th,
             .items-table td {
-                padding: 12px 8px;
+                padding: 10px 5px;
+            }
+
+            /* Ajustar anchos de columnas para móvil */
+            .items-table th:nth-child(1),
+            .items-table td:nth-child(1) {
+                width: 5% !important;
+                padding-left: 8px;
+            }
+
+            .items-table th:nth-child(2),
+            .items-table td:nth-child(2) {
+                width: 40% !important;
+                padding-left: 8px;
+            }
+
+            .items-table th:nth-child(3),
+            .items-table td:nth-child(3) {
+                width: 8% !important;
+            }
+
+            .items-table th:nth-child(4),
+            .items-table td:nth-child(4),
+            .items-table th:nth-child(5),
+            .items-table td:nth-child(5) {
+                width: 18% !important;
+                white-space: nowrap;
+                font-size: 10px;
+            }
+
+            .item-name {
+                font-size: 12px;
+            }
+
+            .item-desc {
+                font-size: 10px;
             }
 
             .totals-card {
