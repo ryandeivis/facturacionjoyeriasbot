@@ -11,7 +11,8 @@ from sqlalchemy import select, and_, func
 from typing import Optional, List
 from datetime import datetime
 
-from src.database.models import Invoice, TenantConfig
+from src.database.models import Invoice, InvoiceItem, Customer, TenantConfig
+from src.database.queries.customer_queries import find_or_create_customer_async
 from src.utils.logger import get_logger
 from config.settings import settings
 
@@ -548,3 +549,323 @@ async def get_invoice_stats_async(
     stats["total_ventas"] = ventas_result.scalar() or 0.0  # type: ignore[assignment]
 
     return stats
+
+
+# ============================================================================
+# FUNCIONES AVANZADAS CON ITEMS NORMALIZADOS
+# ============================================================================
+
+async def create_invoice_with_items_async(
+    db: AsyncSession,
+    invoice_data: dict,
+    items: List[dict],
+    customer_data: Optional[dict] = None
+) -> Optional[Invoice]:
+    """
+    Crea una factura completa con items normalizados y opcionalmente vincula/crea cliente.
+
+    Esta función realiza en una sola transacción:
+    1. Busca o crea el cliente (si se proporcionan datos)
+    2. Genera número de factura si no viene
+    3. Crea la factura
+    4. Crea los items normalizados en invoice_items
+    5. Mantiene compatibilidad guardando items en JSON también
+
+    Args:
+        db: AsyncSession de base de datos
+        invoice_data: Diccionario con datos de la factura (debe incluir organization_id)
+            - organization_id: (requerido) ID de la organización
+            - vendedor_id: ID del vendedor
+            - cliente_nombre, cliente_cedula, etc.: Datos del cliente (legacy)
+            - subtotal, descuento, impuesto, total: Totales
+            - estado: Estado de la factura (default: PENDIENTE)
+        items: Lista de diccionarios con datos de cada item:
+            - descripcion o nombre: Descripción del item
+            - cantidad: Cantidad (default: 1)
+            - precio o precio_unitario: Precio unitario
+            - material: (opcional) Material de la joya
+            - peso_gramos: (opcional) Peso en gramos
+            - tipo_prenda: (opcional) Tipo de prenda
+        customer_data: Datos del cliente para buscar/crear (opcional)
+            - nombre: Nombre del cliente
+            - cedula: Cédula del cliente
+            - telefono: Teléfono del cliente
+            - email, direccion, ciudad: Datos adicionales
+
+    Returns:
+        Factura creada con items o None si hubo error
+
+    Example:
+        >>> invoice = await create_invoice_with_items_async(
+        ...     db,
+        ...     invoice_data={
+        ...         "organization_id": "org-123",
+        ...         "vendedor_id": 1,
+        ...         "subtotal": 1500.0,
+        ...         "total": 1500.0
+        ...     },
+        ...     items=[
+        ...         {"descripcion": "Anillo oro 18k", "cantidad": 1, "precio": 800.0, "material": "oro"},
+        ...         {"descripcion": "Cadena plata", "cantidad": 2, "precio": 350.0, "material": "plata"}
+        ...     ],
+        ...     customer_data={"nombre": "Juan Pérez", "cedula": "12345678"}
+        ... )
+    """
+    try:
+        if 'organization_id' not in invoice_data:
+            raise ValueError("organization_id es requerido para crear factura")
+
+        org_id = invoice_data["organization_id"]
+
+        # 1. Find or create customer si hay datos
+        customer_id = None
+        if customer_data and customer_data.get('nombre'):
+            try:
+                customer = await find_or_create_customer_async(db, org_id, customer_data)
+                customer_id = customer.id
+                # Actualizar datos de cliente en invoice_data para compatibilidad
+                invoice_data.setdefault('cliente_nombre', customer.nombre)
+                invoice_data.setdefault('cliente_cedula', customer.cedula)
+                invoice_data.setdefault('cliente_telefono', customer.telefono)
+                invoice_data.setdefault('cliente_email', customer.email)
+                invoice_data.setdefault('cliente_direccion', customer.direccion)
+                invoice_data.setdefault('cliente_ciudad', customer.ciudad)
+            except ValueError as e:
+                logger.warning(f"No se pudo crear cliente: {e}")
+
+        # 2. Generar número de factura si no viene
+        if "numero_factura" not in invoice_data:
+            invoice_data["numero_factura"] = await generate_invoice_number_async(db, org_id)
+
+        # 3. Preparar items para JSON (compatibilidad)
+        items_json = []
+        for item in items:
+            items_json.append({
+                "descripcion": item.get('descripcion', item.get('nombre', 'Item')),
+                "cantidad": item.get('cantidad', 1),
+                "precio": item.get('precio', item.get('precio_unitario', 0)),
+                "subtotal": item.get('cantidad', 1) * item.get('precio', item.get('precio_unitario', 0))
+            })
+
+        # 4. Crear invoice
+        invoice_data['customer_id'] = customer_id
+        invoice_data['items'] = items_json  # JSON para compatibilidad
+        invoice_data.setdefault('estado', 'PENDIENTE')
+        invoice_data.setdefault('version', 1)
+
+        invoice = Invoice(**invoice_data)
+        db.add(invoice)
+        await db.flush()  # Para obtener invoice.id
+
+        # 5. Crear items normalizados
+        for idx, item in enumerate(items, 1):
+            cantidad = item.get('cantidad', 1)
+            precio = item.get('precio', item.get('precio_unitario', 0))
+
+            invoice_item = InvoiceItem(
+                invoice_id=invoice.id,
+                numero=idx,
+                descripcion=item.get('descripcion', item.get('nombre', 'Item')),
+                cantidad=cantidad,
+                precio_unitario=precio,
+                subtotal=cantidad * precio,
+                material=item.get('material'),
+                peso_gramos=item.get('peso_gramos'),
+                tipo_prenda=item.get('tipo_prenda'),
+            )
+            db.add(invoice_item)
+
+        await db.commit()
+        await db.refresh(invoice)
+
+        logger.info(
+            f"Factura con items creada: {invoice.numero_factura} "
+            f"({len(items)} items) en org: {org_id}"
+        )
+        return invoice
+
+    except Exception as e:
+        logger.error(f"Error al crear factura con items: {e}")
+        await db.rollback()
+        return None
+
+
+async def get_invoice_with_items_async(
+    db: AsyncSession,
+    invoice_id: str,
+    org_id: str
+) -> Optional[dict]:
+    """
+    Obtiene una factura con sus items normalizados.
+
+    Args:
+        db: AsyncSession de base de datos
+        invoice_id: ID de la factura
+        org_id: ID de organización
+
+    Returns:
+        Diccionario con factura e items, o None si no existe
+    """
+    # Obtener factura
+    invoice = await get_invoice_by_id_async(db, invoice_id, org_id)
+    if not invoice:
+        return None
+
+    # Obtener items normalizados
+    items_result = await db.execute(
+        select(InvoiceItem)
+        .where(InvoiceItem.invoice_id == invoice_id)
+        .order_by(InvoiceItem.numero)
+    )
+    items = list(items_result.scalars().all())
+
+    # Obtener cliente si existe
+    customer = None
+    if invoice.customer_id:
+        customer_result = await db.execute(
+            select(Customer).where(
+                and_(
+                    Customer.id == invoice.customer_id,
+                    Customer.organization_id == org_id
+                )
+            )
+        )
+        customer = customer_result.scalar_one_or_none()
+
+    return {
+        "invoice": invoice,
+        "items": [item.to_dict() for item in items] if items else invoice.items or [],
+        "items_count": len(items) if items else len(invoice.items or []),
+        "customer": customer.to_dict() if customer else None,
+        "has_normalized_items": len(items) > 0
+    }
+
+
+async def update_invoice_with_items_async(
+    db: AsyncSession,
+    invoice_id: str,
+    org_id: str,
+    invoice_updates: Optional[dict] = None,
+    items: Optional[List[dict]] = None,
+    updated_by: Optional[str] = None
+) -> Optional[Invoice]:
+    """
+    Actualiza una factura y opcionalmente reemplaza sus items.
+
+    Args:
+        db: AsyncSession de base de datos
+        invoice_id: ID de la factura
+        org_id: ID de organización
+        invoice_updates: Campos a actualizar en la factura
+        items: Nuevos items (reemplaza los existentes si se proporciona)
+        updated_by: ID del usuario que actualiza
+
+    Returns:
+        Factura actualizada o None si no existe
+    """
+    try:
+        invoice = await get_invoice_by_id_async(db, invoice_id, org_id)
+        if not invoice:
+            return None
+
+        # Actualizar campos de la factura
+        if invoice_updates:
+            allowed_fields = [
+                'cliente_nombre', 'cliente_cedula', 'cliente_telefono',
+                'cliente_email', 'cliente_direccion', 'cliente_ciudad',
+                'subtotal', 'descuento', 'impuesto', 'total',
+                'estado', 'notas', 'metodo_pago'
+            ]
+            for key, value in invoice_updates.items():
+                if key in allowed_fields and hasattr(invoice, key):
+                    setattr(invoice, key, value)
+
+            # Incrementar versión
+            invoice.version = (invoice.version or 1) + 1
+            if updated_by:
+                invoice.updated_by = updated_by
+
+        # Reemplazar items si se proporcionan
+        if items is not None:
+            # Eliminar items existentes
+            await db.execute(
+                InvoiceItem.__table__.delete().where(
+                    InvoiceItem.invoice_id == invoice_id
+                )
+            )
+
+            # Crear nuevos items
+            items_json = []
+            for idx, item in enumerate(items, 1):
+                cantidad = item.get('cantidad', 1)
+                precio = item.get('precio', item.get('precio_unitario', 0))
+
+                invoice_item = InvoiceItem(
+                    invoice_id=invoice.id,
+                    numero=idx,
+                    descripcion=item.get('descripcion', item.get('nombre', 'Item')),
+                    cantidad=cantidad,
+                    precio_unitario=precio,
+                    subtotal=cantidad * precio,
+                    material=item.get('material'),
+                    peso_gramos=item.get('peso_gramos'),
+                    tipo_prenda=item.get('tipo_prenda'),
+                )
+                db.add(invoice_item)
+
+                items_json.append({
+                    "descripcion": invoice_item.descripcion,
+                    "cantidad": cantidad,
+                    "precio": precio,
+                    "subtotal": cantidad * precio
+                })
+
+            # Actualizar JSON para compatibilidad
+            invoice.items = items_json
+
+        await db.commit()
+        await db.refresh(invoice)
+
+        logger.info(f"Factura actualizada: {invoice.numero_factura}")
+        return invoice
+
+    except Exception as e:
+        logger.error(f"Error actualizando factura con items: {e}")
+        await db.rollback()
+        return None
+
+
+async def get_invoices_by_customer_async(
+    db: AsyncSession,
+    customer_id: str,
+    org_id: str,
+    limit: int = 20,
+    offset: int = 0
+) -> List[Invoice]:
+    """
+    Obtiene las facturas de un cliente específico.
+
+    Args:
+        db: AsyncSession de base de datos
+        customer_id: ID del cliente
+        org_id: ID de organización
+        limit: Límite de resultados
+        offset: Offset para paginación
+
+    Returns:
+        Lista de facturas del cliente
+    """
+    result = await db.execute(
+        select(Invoice)
+        .where(
+            and_(
+                Invoice.customer_id == customer_id,
+                Invoice.organization_id == org_id,
+                Invoice.is_deleted == False
+            )
+        )
+        .order_by(Invoice.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(result.scalars().all())

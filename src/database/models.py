@@ -7,7 +7,7 @@ Incluye soporte para multi-tenancy, soft deletes y timestamps.
 
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, Text,
-    ForeignKey, Float, Index
+    ForeignKey, Float, Index, CheckConstraint
 )
 from sqlalchemy.types import TypeDecorator, VARCHAR
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -71,9 +71,15 @@ class Organization(Base, TimestampMixin, SoftDeleteMixin):
     telefono = Column(String(20), nullable=True)
     direccion = Column(String(500), nullable=True)
 
+    # Auditoría
+    created_by = Column(String(36), nullable=True)
+    updated_by = Column(String(36), nullable=True)
+
     # Relaciones
     users = relationship("User", back_populates="organization", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="organization", cascade="all, delete-orphan")
+    customers = relationship("Customer", back_populates="organization", cascade="all, delete-orphan")
+    invoice_drafts = relationship("InvoiceDraft", back_populates="organization", cascade="all, delete-orphan")
     configs = relationship("TenantConfig", back_populates="organization", uselist=False)
 
     def __repr__(self):
@@ -134,9 +140,14 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     activo = Column(Boolean, default=True, nullable=False)
     ultimo_login = Column(DateTime, nullable=True)
 
+    # Auditoría
+    created_by = Column(String(36), nullable=True)
+    updated_by = Column(String(36), nullable=True)
+
     # Relaciones
     organization = relationship("Organization", back_populates="users")
     facturas = relationship("Invoice", back_populates="vendedor", cascade="all, delete-orphan")
+    invoice_drafts = relationship("InvoiceDraft", back_populates="user")
 
     # Índice compuesto para búsqueda por cédula dentro de una organización
     __table_args__ = (
@@ -164,7 +175,15 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
 
     numero_factura = Column(String(20), nullable=False, index=True)
 
-    # Datos del cliente
+    # FK a Customer normalizado (nullable para compatibilidad)
+    customer_id = Column(
+        String(36),
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
+
+    # Datos del cliente (legacy - mantener para compatibilidad)
     cliente_nombre = Column(String(200), nullable=False)
     cliente_direccion = Column(String(300), nullable=True)
     cliente_ciudad = Column(String(100), nullable=True)
@@ -172,7 +191,7 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
     cliente_telefono = Column(String(20), nullable=True)
     cliente_cedula = Column(String(15), nullable=True)
 
-    # Items (JSON array)
+    # Items (JSON array - legacy, usar items_rel para nuevas facturas)
     items: Any = Column(JSONType(), default=list, nullable=False)
 
     # Totales
@@ -198,17 +217,62 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
     n8n_processed = Column(Boolean, default=False)
     n8n_response: Any = Column(JSONType(), nullable=True)
 
+    # Notas adicionales
+    notas = Column(Text, nullable=True)
+
+    # Versión para optimistic locking
+    version = Column(Integer, default=1, nullable=False)
+
+    # Auditoría
+    created_by = Column(String(36), nullable=True)
+    updated_by = Column(String(36), nullable=True)
+
     # Relaciones
     organization = relationship("Organization", back_populates="invoices")
     vendedor = relationship("User", back_populates="facturas")
+    customer = relationship("Customer", back_populates="invoices")
+    items_rel = relationship("InvoiceItem", back_populates="invoice", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="invoice", cascade="all, delete-orphan")
+    drafts = relationship("InvoiceDraft", back_populates="invoice")
 
     # Índice compuesto para número de factura único por organización
     __table_args__ = (
         Index('ix_invoices_org_numero', 'organization_id', 'numero_factura', unique=True),
         Index('ix_invoices_org_estado', 'organization_id', 'estado'),
         Index('ix_invoices_org_vendedor', 'organization_id', 'vendedor_id'),
+        Index('ix_invoices_org_created', 'organization_id', 'created_at'),
+        Index('ix_invoices_cliente_cedula', 'cliente_cedula'),
+        CheckConstraint("subtotal >= 0", name="ck_invoices_subtotal_min"),
+        CheckConstraint("descuento >= 0", name="ck_invoices_descuento_min"),
+        CheckConstraint("impuesto >= 0", name="ck_invoices_impuesto_min"),
+        CheckConstraint("total >= 0", name="ck_invoices_total_min"),
+        CheckConstraint(
+            "estado IN ('BORRADOR', 'PENDIENTE', 'PAGADA', 'ANULADA')",
+            name="ck_invoices_estado_valid"
+        ),
     )
+
+    @property
+    def items_list(self) -> List[dict]:
+        """
+        Retorna items de tabla normalizada o JSON legacy.
+
+        Prioriza items_rel (normalizado), fallback a items (JSON).
+        """
+        if self.items_rel:
+            return [
+                {
+                    'descripcion': item.descripcion,
+                    'cantidad': item.cantidad,
+                    'precio': item.precio_unitario,
+                    'subtotal': item.subtotal,
+                    'material': item.material,
+                    'peso_gramos': item.peso_gramos,
+                    'tipo_prenda': item.tipo_prenda,
+                }
+                for item in self.items_rel
+            ]
+        return self.items or []
 
     def __repr__(self):
         return f"<Invoice {self.numero_factura}>"
@@ -344,4 +408,258 @@ class MetricEvent(Base):
             "duration_ms": self.duration_ms,
             "metadata": self.event_metadata,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+# ============================================================================
+# MODELOS DE NORMALIZACIÓN Y TRAZABILIDAD
+# ============================================================================
+
+
+class Customer(Base, TimestampMixin, SoftDeleteMixin):
+    """
+    Modelo de Cliente normalizado.
+
+    Centraliza los datos de clientes que antes estaban desnormalizados
+    en cada factura. Permite tracking de clientes recurrentes y análisis.
+    """
+    __tablename__ = "customers"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+
+    # Multi-tenancy
+    organization_id = Column(
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Datos del cliente
+    nombre = Column(String(200), nullable=False)
+    cedula = Column(String(15), nullable=True, index=True)
+    telefono = Column(String(20), nullable=True)
+    email = Column(String(255), nullable=True)
+    direccion = Column(String(300), nullable=True)
+    ciudad = Column(String(100), nullable=True)
+    notas = Column(Text, nullable=True)
+
+    # Auditoría
+    created_by = Column(String(36), nullable=True)
+    updated_by = Column(String(36), nullable=True)
+
+    # Relaciones
+    organization = relationship("Organization", back_populates="customers")
+    invoices = relationship("Invoice", back_populates="customer")
+
+    # Índices compuestos
+    __table_args__ = (
+        Index('ix_customers_org_cedula', 'organization_id', 'cedula'),
+        Index('ix_customers_org_nombre', 'organization_id', 'nombre'),
+        Index('ix_customers_org_email', 'organization_id', 'email'),
+    )
+
+    def __repr__(self):
+        return f"<Customer {self.nombre} ({self.cedula})>"
+
+    def to_dict(self) -> dict:
+        """Serializa el cliente a diccionario."""
+        return {
+            "id": self.id,
+            "organization_id": self.organization_id,
+            "nombre": self.nombre,
+            "cedula": self.cedula,
+            "telefono": self.telefono,
+            "email": self.email,
+            "direccion": self.direccion,
+            "ciudad": self.ciudad,
+            "notas": self.notas,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class InvoiceItem(Base, TimestampMixin):
+    """
+    Modelo de Item de Factura normalizado.
+
+    Separa los items del campo JSON en Invoice para permitir:
+    - Queries SQL sobre items individuales
+    - Reportes de productos más vendidos
+    - Análisis de ventas por categoría/material
+    """
+    __tablename__ = "invoice_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # FK a factura
+    invoice_id = Column(
+        String(36),
+        ForeignKey("invoices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Datos del item
+    numero = Column(Integer, nullable=False, default=1)  # Orden en la factura
+    descripcion = Column(String(200), nullable=False)
+    cantidad = Column(Integer, nullable=False, default=1)
+    precio_unitario = Column(Float, nullable=False)
+    subtotal = Column(Float, nullable=False)
+
+    # Metadata joyería (opcional)
+    material = Column(String(50), nullable=True)  # oro_18k, plata_925, etc.
+    peso_gramos = Column(Float, nullable=True)
+    tipo_prenda = Column(String(50), nullable=True)  # anillo, cadena, arete, etc.
+
+    # Relación
+    invoice = relationship("Invoice", back_populates="items_rel")
+
+    # Constraints e índices
+    __table_args__ = (
+        Index('ix_invoice_items_invoice', 'invoice_id'),
+        Index('ix_invoice_items_descripcion', 'descripcion'),
+        Index('ix_invoice_items_material', 'material'),
+        Index('ix_invoice_items_tipo_prenda', 'tipo_prenda'),
+        CheckConstraint("cantidad >= 1", name="ck_invoice_items_cantidad_min"),
+        CheckConstraint("precio_unitario >= 0", name="ck_invoice_items_precio_min"),
+        CheckConstraint("subtotal >= 0", name="ck_invoice_items_subtotal_min"),
+    )
+
+    def __repr__(self):
+        return f"<InvoiceItem {self.descripcion} x{self.cantidad}>"
+
+    def to_dict(self) -> dict:
+        """Serializa el item a diccionario."""
+        return {
+            "id": self.id,
+            "invoice_id": self.invoice_id,
+            "numero": self.numero,
+            "descripcion": self.descripcion,
+            "cantidad": self.cantidad,
+            "precio_unitario": self.precio_unitario,
+            "subtotal": self.subtotal,
+            "material": self.material,
+            "peso_gramos": self.peso_gramos,
+            "tipo_prenda": self.tipo_prenda,
+        }
+
+
+class InvoiceDraft(Base, TimestampMixin):
+    """
+    Modelo de Borrador de Factura con trazabilidad.
+
+    Almacena el estado de una factura en proceso de creación,
+    permitiendo trazabilidad completa de:
+    - Input original del usuario
+    - Datos extraídos por IA
+    - Modificaciones del usuario
+    - Historial de cambios
+    """
+    __tablename__ = "invoice_drafts"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+
+    # Multi-tenancy
+    organization_id = Column(
+        String(36),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+
+    # Usuario que crea el borrador
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    # Chat de Telegram (para recuperar borradores)
+    telegram_chat_id = Column(Integer, nullable=False, index=True)
+
+    # Estado del flujo de conversación
+    current_step = Column(String(50), nullable=False, default="SELECCIONAR_INPUT")
+
+    # Input original (para trazabilidad)
+    input_type = Column(String(10), nullable=True)  # TEXTO, VOZ, FOTO
+    input_raw = Column(Text, nullable=True)
+    input_file_path = Column(String(500), nullable=True)
+
+    # Datos extraídos por IA (snapshot original)
+    ai_response_raw: Any = Column(JSONType(), nullable=True)
+    ai_extraction_timestamp = Column(DateTime, nullable=True)
+
+    # Datos actuales (pueden ser modificados por usuario)
+    items_data: Any = Column(JSONType(), default=list, nullable=False)
+    customer_data: Any = Column(JSONType(), default=dict, nullable=False)
+    totals_data: Any = Column(JSONType(), default=dict, nullable=False)
+
+    # Historial de cambios [{timestamp, field, old_value, new_value, source}]
+    change_history: Any = Column(JSONType(), default=list, nullable=False)
+
+    # Estado del borrador
+    status = Column(String(20), default="active", nullable=False)  # active, completed, cancelled, expired
+
+    # Expiración (borradores abandonados)
+    expires_at = Column(DateTime, nullable=True)
+
+    # FK a factura final (si se completó)
+    invoice_id = Column(
+        String(36),
+        ForeignKey("invoices.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    # Relaciones
+    organization = relationship("Organization", back_populates="invoice_drafts")
+    user = relationship("User", back_populates="invoice_drafts")
+    invoice = relationship("Invoice", back_populates="drafts")
+
+    # Índices
+    __table_args__ = (
+        Index('ix_drafts_org_user', 'organization_id', 'user_id'),
+        Index('ix_drafts_chat', 'telegram_chat_id'),
+        Index('ix_drafts_status', 'status'),
+        Index('ix_drafts_org_status', 'organization_id', 'status'),
+    )
+
+    def __repr__(self):
+        return f"<InvoiceDraft {self.id[:8]} step={self.current_step} status={self.status}>"
+
+    def add_change(self, field: str, old_value: Any, new_value: Any, source: str = "user") -> None:
+        """
+        Agrega un cambio al historial.
+
+        Args:
+            field: Nombre del campo modificado (ej: "items[0].precio")
+            old_value: Valor anterior
+            new_value: Valor nuevo
+            source: Origen del cambio ("user", "ai", "system")
+        """
+        if self.change_history is None:
+            self.change_history = []
+
+        self.change_history.append({
+            "timestamp": datetime.utcnow().isoformat(),
+            "field": field,
+            "old_value": old_value,
+            "new_value": new_value,
+            "source": source,
+        })
+
+    def to_dict(self) -> dict:
+        """Serializa el borrador a diccionario."""
+        return {
+            "id": self.id,
+            "organization_id": self.organization_id,
+            "user_id": self.user_id,
+            "telegram_chat_id": self.telegram_chat_id,
+            "current_step": self.current_step,
+            "input_type": self.input_type,
+            "input_raw": self.input_raw,
+            "ai_response_raw": self.ai_response_raw,
+            "items_data": self.items_data,
+            "customer_data": self.customer_data,
+            "totals_data": self.totals_data,
+            "change_history": self.change_history,
+            "status": self.status,
+            "invoice_id": self.invoice_id,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
