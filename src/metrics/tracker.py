@@ -7,7 +7,7 @@ Proporciona métodos convenientes para los eventos más comunes.
 
 import time
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from functools import wraps
 from contextlib import asynccontextmanager
 
@@ -334,6 +334,254 @@ class MetricsTracker:
             organization_id=organization_id,
             success=False,
             metadata={"endpoint": endpoint},
+        )
+
+    # =========================================================================
+    # NEGOCIO - CLIENTES (JOYERÍA)
+    # =========================================================================
+
+    async def track_customer_new(
+        self,
+        organization_id: str,
+        customer_cedula: str,
+        customer_name: str,
+        user_id: Optional[int] = None,
+    ):
+        """Trackea registro de cliente nuevo."""
+        await self._collector.collect(
+            event_type=EventType.CUSTOMER_NEW,
+            organization_id=organization_id,
+            user_id=user_id,
+            metadata={
+                "customer_cedula": customer_cedula,
+                "customer_name": customer_name,
+            },
+        )
+
+    async def track_customer_returning(
+        self,
+        organization_id: str,
+        customer_cedula: str,
+        customer_name: str,
+        previous_purchases: int = 0,
+        user_id: Optional[int] = None,
+    ):
+        """Trackea cliente recurrente (ya existente)."""
+        await self._collector.collect(
+            event_type=EventType.CUSTOMER_RETURNING,
+            organization_id=organization_id,
+            user_id=user_id,
+            value=float(previous_purchases),
+            metadata={
+                "customer_cedula": customer_cedula,
+                "customer_name": customer_name,
+                "previous_purchases": previous_purchases,
+            },
+        )
+
+    async def track_customer_activity(
+        self,
+        organization_id: str,
+        customer_cedula: str,
+        customer_name: str,
+        is_new: bool,
+        previous_purchases: int = 0,
+        user_id: Optional[int] = None,
+    ):
+        """
+        Trackea actividad de cliente (nuevo o recurrente).
+
+        Args:
+            organization_id: ID de la organización
+            customer_cedula: Cédula del cliente
+            customer_name: Nombre del cliente
+            is_new: True si es cliente nuevo
+            previous_purchases: Compras anteriores (si recurrente)
+            user_id: ID del vendedor
+        """
+        if is_new:
+            await self.track_customer_new(
+                organization_id, customer_cedula, customer_name, user_id
+            )
+        else:
+            await self.track_customer_returning(
+                organization_id, customer_cedula, customer_name,
+                previous_purchases, user_id
+            )
+
+    # =========================================================================
+    # NEGOCIO - PRODUCTOS/VENTAS (JOYERÍA)
+    # =========================================================================
+
+    async def track_product_sale(
+        self,
+        organization_id: str,
+        item: Dict[str, Any],
+        invoice_id: Optional[str] = None,
+        user_id: Optional[int] = None,
+    ):
+        """
+        Trackea venta de producto individual.
+
+        Args:
+            organization_id: ID de la organización
+            item: Diccionario con datos del item:
+                - descripcion: str
+                - cantidad: int
+                - precio_unitario: float
+                - subtotal: float
+                - material: Optional[str] (oro, plata, etc.)
+                - tipo_prenda: Optional[str] (anillo, collar, etc.)
+                - peso_gramos: Optional[float]
+            invoice_id: ID de la factura
+            user_id: ID del vendedor
+        """
+        subtotal = item.get('subtotal', 0) or (
+            item.get('cantidad', 1) * item.get('precio_unitario', 0)
+        )
+
+        # Evento principal de producto vendido
+        await self._collector.collect(
+            event_type=EventType.PRODUCT_SOLD,
+            organization_id=organization_id,
+            user_id=user_id,
+            value=subtotal,
+            metadata={
+                "descripcion": item.get('descripcion', ''),
+                "cantidad": item.get('cantidad', 1),
+                "precio_unitario": item.get('precio_unitario', 0),
+                "material": item.get('material'),
+                "tipo_prenda": item.get('tipo_prenda'),
+                "peso_gramos": item.get('peso_gramos'),
+                "invoice_id": invoice_id,
+            },
+        )
+
+        # Evento por material (si está definido)
+        material = item.get('material')
+        if material:
+            await self._collector.collect(
+                event_type=EventType.SALE_BY_MATERIAL,
+                organization_id=organization_id,
+                user_id=user_id,
+                value=subtotal,
+                metadata={
+                    "material": material,
+                    "cantidad": item.get('cantidad', 1),
+                    "peso_gramos": item.get('peso_gramos'),
+                },
+            )
+
+        # Evento por categoría/tipo de prenda (si está definido)
+        tipo_prenda = item.get('tipo_prenda')
+        if tipo_prenda:
+            await self._collector.collect(
+                event_type=EventType.SALE_BY_CATEGORY,
+                organization_id=organization_id,
+                user_id=user_id,
+                value=subtotal,
+                metadata={
+                    "tipo_prenda": tipo_prenda,
+                    "cantidad": item.get('cantidad', 1),
+                },
+            )
+
+    async def track_sale_completed(
+        self,
+        organization_id: str,
+        invoice_id: str,
+        total_amount: float,
+        items_count: int,
+        customer_cedula: Optional[str] = None,
+        user_id: Optional[int] = None,
+    ):
+        """
+        Trackea venta completada (factura finalizada).
+
+        Args:
+            organization_id: ID de la organización
+            invoice_id: ID de la factura
+            total_amount: Monto total de la venta
+            items_count: Número de items vendidos
+            customer_cedula: Cédula del cliente
+            user_id: ID del vendedor
+        """
+        await self._collector.collect(
+            event_type=EventType.SALE_COMPLETED,
+            organization_id=organization_id,
+            user_id=user_id,
+            value=total_amount,
+            metadata={
+                "invoice_id": invoice_id,
+                "items_count": items_count,
+                "customer_cedula": customer_cedula,
+            },
+        )
+
+        # Trackear venta del vendedor
+        if user_id:
+            await self._collector.collect(
+                event_type=EventType.SELLER_SALE,
+                organization_id=organization_id,
+                user_id=user_id,
+                value=total_amount,
+                metadata={
+                    "invoice_id": invoice_id,
+                    "items_count": items_count,
+                },
+            )
+
+    async def track_full_sale(
+        self,
+        organization_id: str,
+        invoice_id: str,
+        items: List[Dict[str, Any]],
+        total_amount: float,
+        customer_data: Optional[Dict[str, Any]] = None,
+        is_new_customer: bool = False,
+        user_id: Optional[int] = None,
+    ):
+        """
+        Trackea venta completa con todos sus componentes.
+
+        Trackea: cliente, cada producto, y la venta final.
+
+        Args:
+            organization_id: ID de la organización
+            invoice_id: ID de la factura
+            items: Lista de items vendidos
+            total_amount: Monto total
+            customer_data: Datos del cliente (nombre, cedula)
+            is_new_customer: Si es cliente nuevo
+            user_id: ID del vendedor
+        """
+        # 1. Trackear actividad del cliente
+        if customer_data:
+            await self.track_customer_activity(
+                organization_id=organization_id,
+                customer_cedula=customer_data.get('cedula', ''),
+                customer_name=customer_data.get('nombre', ''),
+                is_new=is_new_customer,
+                user_id=user_id,
+            )
+
+        # 2. Trackear cada producto
+        for item in items:
+            await self.track_product_sale(
+                organization_id=organization_id,
+                item=item,
+                invoice_id=invoice_id,
+                user_id=user_id,
+            )
+
+        # 3. Trackear venta completada
+        await self.track_sale_completed(
+            organization_id=organization_id,
+            invoice_id=invoice_id,
+            total_amount=total_amount,
+            items_count=len(items),
+            customer_cedula=customer_data.get('cedula') if customer_data else None,
+            user_id=user_id,
         )
 
     # =========================================================================

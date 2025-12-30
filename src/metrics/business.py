@@ -148,6 +148,134 @@ class OrganizationMetrics:
 
 
 @dataclass
+class CustomerStats:
+    """Estadísticas de un cliente específico."""
+
+    customer_cedula: str
+    customer_name: str = ""
+    total_purchases: int = 0
+    total_spent: float = 0.0
+    avg_purchase_amount: float = 0.0
+    first_purchase: Optional[datetime] = None
+    last_purchase: Optional[datetime] = None
+    favorite_material: Optional[str] = None
+    favorite_category: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "customer_cedula": self.customer_cedula,
+            "customer_name": self.customer_name,
+            "total_purchases": self.total_purchases,
+            "total_spent": round(self.total_spent, 2),
+            "avg_purchase_amount": round(self.avg_purchase_amount, 2),
+            "first_purchase": self.first_purchase.isoformat() if self.first_purchase else None,
+            "last_purchase": self.last_purchase.isoformat() if self.last_purchase else None,
+            "favorite_material": self.favorite_material,
+            "favorite_category": self.favorite_category,
+        }
+
+
+@dataclass
+class SellerPerformance:
+    """Rendimiento de un vendedor."""
+
+    user_id: int
+    user_name: str = ""
+    total_sales: int = 0
+    total_amount: float = 0.0
+    avg_sale_amount: float = 0.0
+    items_sold: int = 0
+    new_customers: int = 0
+    returning_customers: int = 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "user_id": self.user_id,
+            "user_name": self.user_name,
+            "total_sales": self.total_sales,
+            "total_amount": round(self.total_amount, 2),
+            "avg_sale_amount": round(self.avg_sale_amount, 2),
+            "items_sold": self.items_sold,
+            "new_customers": self.new_customers,
+            "returning_customers": self.returning_customers,
+        }
+
+
+@dataclass
+class TopProduct:
+    """Producto más vendido."""
+
+    descripcion: str
+    cantidad_vendida: int = 0
+    total_ingresos: float = 0.0
+    material: Optional[str] = None
+    tipo_prenda: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "descripcion": self.descripcion,
+            "cantidad_vendida": self.cantidad_vendida,
+            "total_ingresos": round(self.total_ingresos, 2),
+            "material": self.material,
+            "tipo_prenda": self.tipo_prenda,
+        }
+
+
+@dataclass
+class JewelryMetrics:
+    """Métricas específicas de joyería."""
+
+    period_start: datetime
+    period_end: datetime
+
+    # Clientes
+    new_customers: int = 0
+    returning_customers: int = 0
+    total_customers_served: int = 0
+
+    # Productos
+    total_items_sold: int = 0
+    top_products: List["TopProduct"] = field(default_factory=list)
+
+    # Por material
+    sales_by_material: Dict[str, float] = field(default_factory=dict)
+    quantity_by_material: Dict[str, int] = field(default_factory=dict)
+
+    # Por categoría
+    sales_by_category: Dict[str, float] = field(default_factory=dict)
+    quantity_by_category: Dict[str, int] = field(default_factory=dict)
+
+    # Vendedores
+    seller_performance: List["SellerPerformance"] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "period": {
+                "start": self.period_start.isoformat(),
+                "end": self.period_end.isoformat(),
+            },
+            "customers": {
+                "new": self.new_customers,
+                "returning": self.returning_customers,
+                "total_served": self.total_customers_served,
+            },
+            "products": {
+                "total_items_sold": self.total_items_sold,
+                "top_products": [p.to_dict() for p in self.top_products],
+            },
+            "by_material": {
+                "sales": self.sales_by_material,
+                "quantity": self.quantity_by_material,
+            },
+            "by_category": {
+                "sales": self.sales_by_category,
+                "quantity": self.quantity_by_category,
+            },
+            "sellers": [s.to_dict() for s in self.seller_performance],
+        }
+
+
+@dataclass
 class ProductMetrics:
     """Métricas globales del producto SaaS."""
 
@@ -629,6 +757,418 @@ class BusinessMetricsService:
             "collector": collector_summary,
             "generated_at": datetime.utcnow().isoformat(),
         }
+
+    # =========================================================================
+    # MÉTRICAS DE JOYERÍA
+    # =========================================================================
+
+    async def get_jewelry_metrics(
+        self,
+        organization_id: str,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+    ) -> JewelryMetrics:
+        """
+        Obtiene métricas específicas del negocio de joyería.
+
+        Args:
+            organization_id: ID de la organización
+            since: Inicio del período (default: últimos 30 días)
+            until: Fin del período (default: ahora)
+
+        Returns:
+            Métricas de joyería
+        """
+        if until is None:
+            until = datetime.utcnow()
+        if since is None:
+            since = until - timedelta(days=30)
+
+        metrics = JewelryMetrics(
+            period_start=since,
+            period_end=until,
+        )
+
+        counters = await self._collector.get_organization_counters(organization_id)
+
+        # Clientes
+        if EventType.CUSTOMER_NEW.value in counters:
+            metrics.new_customers = counters[EventType.CUSTOMER_NEW.value].count
+        if EventType.CUSTOMER_RETURNING.value in counters:
+            metrics.returning_customers = counters[EventType.CUSTOMER_RETURNING.value].count
+        metrics.total_customers_served = metrics.new_customers + metrics.returning_customers
+
+        # Productos vendidos
+        if EventType.PRODUCT_SOLD.value in counters:
+            metrics.total_items_sold = counters[EventType.PRODUCT_SOLD.value].count
+
+        # Ventas por material
+        events = await self._collector.get_events(
+            event_type=EventType.SALE_BY_MATERIAL,
+            organization_id=organization_id,
+            since=since,
+            limit=10000,
+        )
+        for event in events:
+            material = event.metadata.get("material", "Sin especificar")
+            cantidad = event.metadata.get("cantidad", 1)
+            # event.metadata contiene el valor en total_value a través del collector
+            # pero aquí calculamos desde los eventos
+            metrics.sales_by_material[material] = (
+                metrics.sales_by_material.get(material, 0.0) + (event.metadata.get("subtotal", 0) or 0)
+            )
+            metrics.quantity_by_material[material] = (
+                metrics.quantity_by_material.get(material, 0) + cantidad
+            )
+
+        # Ventas por categoría
+        events = await self._collector.get_events(
+            event_type=EventType.SALE_BY_CATEGORY,
+            organization_id=organization_id,
+            since=since,
+            limit=10000,
+        )
+        for event in events:
+            categoria = event.metadata.get("tipo_prenda", "Sin especificar")
+            cantidad = event.metadata.get("cantidad", 1)
+            metrics.sales_by_category[categoria] = (
+                metrics.sales_by_category.get(categoria, 0.0) + (event.metadata.get("subtotal", 0) or 0)
+            )
+            metrics.quantity_by_category[categoria] = (
+                metrics.quantity_by_category.get(categoria, 0) + cantidad
+            )
+
+        # Top productos
+        top_products = await self.get_top_products(organization_id, since, until, limit=10)
+        metrics.top_products = top_products
+
+        # Rendimiento de vendedores
+        seller_perf = await self.get_seller_performance(organization_id, since, until)
+        metrics.seller_performance = seller_perf
+
+        return metrics
+
+    async def get_top_products(
+        self,
+        organization_id: str,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+        limit: int = 10,
+    ) -> List[TopProduct]:
+        """
+        Obtiene los productos más vendidos.
+
+        Args:
+            organization_id: ID de la organización
+            since: Inicio del período
+            until: Fin del período
+            limit: Número máximo de productos a retornar
+
+        Returns:
+            Lista de productos más vendidos
+        """
+        if until is None:
+            until = datetime.utcnow()
+        if since is None:
+            since = until - timedelta(days=30)
+
+        events = await self._collector.get_events(
+            event_type=EventType.PRODUCT_SOLD,
+            organization_id=organization_id,
+            since=since,
+            limit=10000,
+        )
+
+        # Agregar por descripción
+        products: Dict[str, TopProduct] = {}
+        for event in events:
+            descripcion = event.metadata.get("descripcion", "Sin descripción")
+            cantidad = event.metadata.get("cantidad", 1)
+
+            if descripcion not in products:
+                products[descripcion] = TopProduct(
+                    descripcion=descripcion,
+                    material=event.metadata.get("material"),
+                    tipo_prenda=event.metadata.get("tipo_prenda"),
+                )
+
+            products[descripcion].cantidad_vendida += cantidad
+            # El valor está en el event data a través del collector
+            subtotal = event.metadata.get("precio_unitario", 0) * cantidad
+            products[descripcion].total_ingresos += subtotal
+
+        # Ordenar por cantidad vendida
+        sorted_products = sorted(
+            products.values(),
+            key=lambda p: p.cantidad_vendida,
+            reverse=True
+        )
+
+        return sorted_products[:limit]
+
+    async def get_customer_stats(
+        self,
+        organization_id: str,
+        customer_cedula: str,
+    ) -> CustomerStats:
+        """
+        Obtiene estadísticas de un cliente específico.
+
+        Args:
+            organization_id: ID de la organización
+            customer_cedula: Cédula del cliente
+
+        Returns:
+            Estadísticas del cliente
+        """
+        stats = CustomerStats(customer_cedula=customer_cedula)
+
+        # Buscar eventos de venta completada donde el cliente participó
+        events = await self._collector.get_events(
+            event_type=EventType.SALE_COMPLETED,
+            organization_id=organization_id,
+            limit=10000,
+        )
+
+        customer_events = [
+            e for e in events
+            if e.metadata.get("customer_cedula") == customer_cedula
+        ]
+
+        if not customer_events:
+            return stats
+
+        stats.total_purchases = len(customer_events)
+
+        # Calcular totales
+        for event in customer_events:
+            # El valor de la venta está en el metadata o como value del evento
+            # Usamos el patrón del collector donde value = total_amount
+            pass
+
+        # Obtener primera y última compra
+        sorted_events = sorted(customer_events, key=lambda e: e.timestamp)
+        if sorted_events:
+            stats.first_purchase = sorted_events[0].timestamp
+            stats.last_purchase = sorted_events[-1].timestamp
+
+        # Buscar productos comprados para determinar favoritos
+        product_events = await self._collector.get_events(
+            event_type=EventType.PRODUCT_SOLD,
+            organization_id=organization_id,
+            limit=10000,
+        )
+
+        # Filtrar por facturas de este cliente
+        customer_invoice_ids = {
+            e.metadata.get("invoice_id")
+            for e in customer_events
+            if e.metadata.get("invoice_id")
+        }
+
+        materials: Dict[str, int] = {}
+        categories: Dict[str, int] = {}
+        total_spent = 0.0
+
+        for event in product_events:
+            if event.metadata.get("invoice_id") in customer_invoice_ids:
+                material = event.metadata.get("material")
+                categoria = event.metadata.get("tipo_prenda")
+                cantidad = event.metadata.get("cantidad", 1)
+                precio = event.metadata.get("precio_unitario", 0)
+                total_spent += precio * cantidad
+
+                if material:
+                    materials[material] = materials.get(material, 0) + cantidad
+                if categoria:
+                    categories[categoria] = categories.get(categoria, 0) + cantidad
+
+        stats.total_spent = total_spent
+        if stats.total_purchases > 0:
+            stats.avg_purchase_amount = total_spent / stats.total_purchases
+
+        # Material y categoría favoritos
+        if materials:
+            stats.favorite_material = max(materials, key=materials.get)
+        if categories:
+            stats.favorite_category = max(categories, key=categories.get)
+
+        return stats
+
+    async def get_seller_performance(
+        self,
+        organization_id: str,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+    ) -> List[SellerPerformance]:
+        """
+        Obtiene el rendimiento de los vendedores.
+
+        Args:
+            organization_id: ID de la organización
+            since: Inicio del período
+            until: Fin del período
+
+        Returns:
+            Lista de rendimiento por vendedor
+        """
+        if until is None:
+            until = datetime.utcnow()
+        if since is None:
+            since = until - timedelta(days=30)
+
+        # Obtener eventos de ventas de vendedores
+        events = await self._collector.get_events(
+            event_type=EventType.SELLER_SALE,
+            organization_id=organization_id,
+            since=since,
+            limit=10000,
+        )
+
+        sellers: Dict[int, SellerPerformance] = {}
+
+        for event in events:
+            user_id = event.user_id
+            if not user_id:
+                continue
+
+            if user_id not in sellers:
+                sellers[user_id] = SellerPerformance(user_id=user_id)
+
+            sellers[user_id].total_sales += 1
+            sellers[user_id].items_sold += event.metadata.get("items_count", 0)
+            # El monto total está en value o metadata
+            # Por el patrón del collector, usamos metadata
+
+        # Agregar clientes nuevos y recurrentes por vendedor
+        new_customer_events = await self._collector.get_events(
+            event_type=EventType.CUSTOMER_NEW,
+            organization_id=organization_id,
+            since=since,
+            limit=10000,
+        )
+        for event in new_customer_events:
+            user_id = event.user_id
+            if user_id and user_id in sellers:
+                sellers[user_id].new_customers += 1
+
+        returning_customer_events = await self._collector.get_events(
+            event_type=EventType.CUSTOMER_RETURNING,
+            organization_id=organization_id,
+            since=since,
+            limit=10000,
+        )
+        for event in returning_customer_events:
+            user_id = event.user_id
+            if user_id and user_id in sellers:
+                sellers[user_id].returning_customers += 1
+
+        # Calcular promedios
+        for seller in sellers.values():
+            if seller.total_sales > 0:
+                seller.avg_sale_amount = seller.total_amount / seller.total_sales
+
+        # Ordenar por ventas totales
+        sorted_sellers = sorted(
+            sellers.values(),
+            key=lambda s: s.total_sales,
+            reverse=True
+        )
+
+        return sorted_sellers
+
+    async def get_sales_by_material(
+        self,
+        organization_id: str,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Obtiene ventas agrupadas por material.
+
+        Args:
+            organization_id: ID de la organización
+            since: Inicio del período
+            until: Fin del período
+
+        Returns:
+            Diccionario con ventas por material
+        """
+        if until is None:
+            until = datetime.utcnow()
+        if since is None:
+            since = until - timedelta(days=30)
+
+        events = await self._collector.get_events(
+            event_type=EventType.SALE_BY_MATERIAL,
+            organization_id=organization_id,
+            since=since,
+            limit=10000,
+        )
+
+        materials: Dict[str, Dict[str, Any]] = {}
+        for event in events:
+            material = event.metadata.get("material", "Sin especificar")
+            cantidad = event.metadata.get("cantidad", 1)
+            peso = event.metadata.get("peso_gramos", 0) or 0
+
+            if material not in materials:
+                materials[material] = {
+                    "cantidad": 0,
+                    "peso_total_gramos": 0.0,
+                    "ventas": 0,
+                }
+
+            materials[material]["cantidad"] += cantidad
+            materials[material]["peso_total_gramos"] += peso
+            materials[material]["ventas"] += 1
+
+        return materials
+
+    async def get_sales_by_category(
+        self,
+        organization_id: str,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Obtiene ventas agrupadas por categoría/tipo de prenda.
+
+        Args:
+            organization_id: ID de la organización
+            since: Inicio del período
+            until: Fin del período
+
+        Returns:
+            Diccionario con ventas por categoría
+        """
+        if until is None:
+            until = datetime.utcnow()
+        if since is None:
+            since = until - timedelta(days=30)
+
+        events = await self._collector.get_events(
+            event_type=EventType.SALE_BY_CATEGORY,
+            organization_id=organization_id,
+            since=since,
+            limit=10000,
+        )
+
+        categories: Dict[str, Dict[str, Any]] = {}
+        for event in events:
+            categoria = event.metadata.get("tipo_prenda", "Sin especificar")
+            cantidad = event.metadata.get("cantidad", 1)
+
+            if categoria not in categories:
+                categories[categoria] = {
+                    "cantidad": 0,
+                    "ventas": 0,
+                }
+
+            categories[categoria]["cantidad"] += cantidad
+            categories[categoria]["ventas"] += 1
+
+        return categories
 
     def get_daily_time_series(
         self,

@@ -69,6 +69,20 @@ class EventType(str, Enum):
     API_ERROR = "api.error"
     API_RATE_LIMITED = "api.rate_limited"
 
+    # Negocio - Clientes (Joyería)
+    CUSTOMER_NEW = "customer.new"
+    CUSTOMER_RETURNING = "customer.returning"
+    CUSTOMER_UPDATED = "customer.updated"
+
+    # Negocio - Productos/Ventas (Joyería)
+    PRODUCT_SOLD = "product.sold"
+    SALE_BY_MATERIAL = "sale.material"
+    SALE_BY_CATEGORY = "sale.category"
+    SALE_COMPLETED = "sale.completed"
+
+    # Negocio - Vendedores (Joyería)
+    SELLER_SALE = "seller.sale"
+
 
 # ============================================================================
 # DATA CLASSES

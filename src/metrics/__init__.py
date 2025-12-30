@@ -49,6 +49,11 @@ from src.metrics.business import (
     ProductMetrics,
     UsageMetrics,
     DataSource,
+    # Métricas de joyería
+    CustomerStats,
+    SellerPerformance,
+    TopProduct,
+    JewelryMetrics,
 )
 
 from src.metrics.tracker import (
@@ -75,6 +80,11 @@ __all__ = [
     "ProductMetrics",
     "UsageMetrics",
     "DataSource",
+    # Métricas de joyería
+    "CustomerStats",
+    "SellerPerformance",
+    "TopProduct",
+    "JewelryMetrics",
     # Tracker
     "MetricsTracker",
     "get_metrics_tracker",

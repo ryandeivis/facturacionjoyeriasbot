@@ -27,8 +27,8 @@
 | 6 | Crear invoice_item_queries.py (sync + async) | ✅ COMPLETADO | 2024-12-30 |
 | 7 | Crear draft_queries.py (sync + async) | ✅ COMPLETADO | 2024-12-30 |
 | 8 | Actualizar invoice_queries.py con create_invoice_with_items_async | ✅ COMPLETADO | 2024-12-30 |
-| 9 | Actualizar queries/__init__.py con exports | ⬜ PENDIENTE | - |
-| 10 | Expandir src/metrics/business.py con métricas de joyería | ⬜ PENDIENTE | - |
+| 9 | Actualizar queries/__init__.py con exports | ✅ COMPLETADO | 2024-12-30 |
+| 10 | Expandir src/metrics/business.py con métricas de joyería | ✅ COMPLETADO | 2024-12-30 |
 | 11 | Crear tests/unit/test_traceability.py | ⬜ PENDIENTE | - |
 | 12 | Expandir tests/unit/test_business_metrics.py | ⬜ PENDIENTE | - |
 | 13 | Crear tests/integration/test_invoice_flow.py | ⬜ PENDIENTE | - |
@@ -235,27 +235,55 @@ Asincrónicas (recomendado):
 
 ---
 
-### Fase 9: Actualizar exports ⬜
+### Fase 9: Actualizar exports ✅
 
-**Archivo a modificar:** `src/database/queries/__init__.py`
+**Archivo modificado:** `src/database/queries/__init__.py`
 
-**Exports a agregar:**
-- [ ] customer_queries.*
-- [ ] invoice_item_queries.*
-- [ ] draft_queries.*
+**Exports agregados:**
+
+- [x] customer_queries.* (5 sync + 11 async)
+- [x] invoice_item_queries.* (5 sync + 14 async)
+- [x] draft_queries.* (4 sync + 16 async + 5 constantes)
+- [x] Nuevas funciones de invoice_queries (4 async)
 
 ---
 
-### Fase 10: Métricas de negocio ⬜
+### Fase 10: Métricas de negocio ✅
 
-**Archivo a modificar:** `src/metrics/business.py`
+**Archivos modificados:**
+- `src/metrics/collectors.py` - Nuevos EventTypes de joyería
+- `src/metrics/tracker.py` - Funciones de tracking
+- `src/metrics/business.py` - Data classes y análisis
+- `src/metrics/__init__.py` - Exports actualizados
 
-**Funciones a agregar:**
-- [ ] track_customer_activity
-- [ ] track_product_sale
-- [ ] get_top_products
-- [ ] get_customer_stats
-- [ ] get_seller_performance
+**EventTypes agregados (collectors.py):**
+- [x] CUSTOMER_NEW, CUSTOMER_RETURNING, CUSTOMER_UPDATED
+- [x] PRODUCT_SOLD, SALE_BY_MATERIAL, SALE_BY_CATEGORY, SALE_COMPLETED
+- [x] SELLER_SALE
+
+**Funciones de tracking agregadas (tracker.py):**
+- [x] track_customer_new
+- [x] track_customer_returning
+- [x] track_customer_activity
+- [x] track_product_sale
+- [x] track_sale_completed
+- [x] track_full_sale
+
+**Data classes agregadas (business.py):**
+- [x] CustomerStats
+- [x] SellerPerformance
+- [x] TopProduct
+- [x] JewelryMetrics
+
+**Funciones de análisis agregadas (business.py):**
+- [x] get_jewelry_metrics
+- [x] get_top_products
+- [x] get_customer_stats
+- [x] get_seller_performance
+- [x] get_sales_by_material
+- [x] get_sales_by_category
+
+**Estado:** ✅ COMPLETADO (2024-12-30)
 
 ---
 
