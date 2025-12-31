@@ -22,10 +22,14 @@ class SoftDeleteMixin:
 
     En lugar de eliminar registros, los marca como eliminados.
     """
-    __allow_unmapped__ = True
 
-    deleted_at: Any = Column(DateTime, nullable=True, index=True)
-    is_deleted: Any = Column(Boolean, default=False, index=True, nullable=False)
+    @declared_attr
+    def deleted_at(cls):
+        return Column(DateTime, nullable=True, index=True)
+
+    @declared_attr
+    def is_deleted(cls):
+        return Column(Boolean, default=False, index=True, nullable=False)
 
     def soft_delete(self) -> None:
         """Marca el registro como eliminado"""
@@ -49,20 +53,24 @@ class TimestampMixin:
 
     Agrega created_at y updated_at a los modelos.
     """
-    __allow_unmapped__ = True
 
-    created_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        nullable=False,
-        index=True
-    )
-    updated_at = Column(
-        DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-        nullable=False
-    )
+    @declared_attr
+    def created_at(cls):
+        return Column(
+            DateTime,
+            default=datetime.utcnow,
+            nullable=False,
+            index=True
+        )
+
+    @declared_attr
+    def updated_at(cls):
+        return Column(
+            DateTime,
+            default=datetime.utcnow,
+            onupdate=datetime.utcnow,
+            nullable=False
+        )
 
 
 class TenantMixin:

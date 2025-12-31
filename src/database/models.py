@@ -257,21 +257,29 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
         """
         Retorna items de tabla normalizada o JSON legacy.
 
-        Prioriza items_rel (normalizado), fallback a items (JSON).
+        Prioriza items_rel (normalizado) si ya fue cargado, fallback a items (JSON).
+        Evita lazy loading para compatibilidad con contextos async.
         """
-        if self.items_rel:
-            return [
-                {
-                    'descripcion': item.descripcion,
-                    'cantidad': item.cantidad,
-                    'precio': item.precio_unitario,
-                    'subtotal': item.subtotal,
-                    'material': item.material,
-                    'peso_gramos': item.peso_gramos,
-                    'tipo_prenda': item.tipo_prenda,
-                }
-                for item in self.items_rel
-            ]
+        # Verificar si items_rel ya fue cargado (eager loading)
+        # Usamos __dict__ para evitar trigger de lazy loading en contexto async
+        try:
+            if 'items_rel' in self.__dict__ and self.__dict__['items_rel']:
+                return [
+                    {
+                        'descripcion': item.descripcion,
+                        'cantidad': item.cantidad,
+                        'precio': item.precio_unitario,
+                        'subtotal': item.subtotal,
+                        'material': item.material,
+                        'peso_gramos': item.peso_gramos,
+                        'tipo_prenda': item.tipo_prenda,
+                    }
+                    for item in self.__dict__['items_rel']
+                ]
+        except Exception:
+            pass
+
+        # Fallback a JSON field
         return self.items or []
 
     def __repr__(self):
@@ -624,7 +632,10 @@ class InvoiceDraft(Base, TimestampMixin):
 
     def add_change(self, field: str, old_value: Any, new_value: Any, source: str = "user") -> None:
         """
-        Agrega un cambio al historial.
+        Agrega un cambio al historial con mutation tracking.
+
+        SQLAlchemy no detecta cambios in-place en columnas JSON, por lo que
+        creamos una nueva lista y usamos flag_modified() para notificar.
 
         Args:
             field: Nombre del campo modificado (ej: "items[0].precio")
@@ -632,16 +643,26 @@ class InvoiceDraft(Base, TimestampMixin):
             new_value: Valor nuevo
             source: Origen del cambio ("user", "ai", "system")
         """
-        if self.change_history is None:
-            self.change_history = []
+        from sqlalchemy.orm.attributes import flag_modified
 
-        self.change_history.append({
+        change = {
             "timestamp": datetime.utcnow().isoformat(),
             "field": field,
             "old_value": old_value,
             "new_value": new_value,
             "source": source,
-        })
+        }
+
+        # Crear nueva lista para forzar detección de cambio por SQLAlchemy
+        if self.change_history is None:
+            self.change_history = []
+
+        new_history = list(self.change_history)
+        new_history.append(change)
+        self.change_history = new_history
+
+        # Marcar explícitamente como modificado para SQLAlchemy
+        flag_modified(self, "change_history")
 
     def to_dict(self) -> dict:
         """Serializa el borrador a diccionario."""

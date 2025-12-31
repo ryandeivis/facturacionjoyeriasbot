@@ -29,9 +29,9 @@
 | 8 | Actualizar invoice_queries.py con create_invoice_with_items_async | ✅ COMPLETADO | 2024-12-30 |
 | 9 | Actualizar queries/__init__.py con exports | ✅ COMPLETADO | 2024-12-30 |
 | 10 | Expandir src/metrics/business.py con métricas de joyería | ✅ COMPLETADO | 2024-12-30 |
-| 11 | Crear tests/unit/test_traceability.py | ⬜ PENDIENTE | - |
-| 12 | Expandir tests/unit/test_business_metrics.py | ⬜ PENDIENTE | - |
-| 13 | Crear tests/integration/test_invoice_flow.py | ⬜ PENDIENTE | - |
+| 11 | Crear tests/unit/test_traceability.py | ✅ COMPLETADO | 2024-12-30 |
+| 12 | Expandir tests/unit/test_business_metrics.py | ✅ COMPLETADO | 2024-12-30 |
+| 13 | Crear tests/integration/test_invoice_flow.py | ✅ COMPLETADO | 2024-12-30 |
 | 14 | Ejecutar migración y tests | ⬜ PENDIENTE | - |
 
 **Leyenda:** ✅ Completado | ⏳ En Progreso | ⬜ Pendiente
@@ -287,39 +287,117 @@ Asincrónicas (recomendado):
 
 ---
 
-### Fase 11: test_traceability.py ⬜
+### Fase 11: test_traceability.py ✅
 
-**Archivo a crear:** `tests/unit/test_traceability.py`
+**Archivo creado:** `tests/unit/test_traceability.py`
 
-**Tests a implementar:**
-- [ ] test_draft_created_on_flow_start
-- [ ] test_ai_extraction_recorded
-- [ ] test_user_edit_tracked
-- [ ] test_draft_linked_to_final_invoice
-- [ ] test_full_flow_traceability
+**Tests implementados:**
+
+Clase `TestDraftTraceability`:
+- [x] test_draft_created_on_flow_start - Verifica creación de borrador al iniciar flujo
+- [x] test_ai_extraction_recorded - Verifica registro de extracción IA con timestamp
+- [x] test_user_edit_tracked - Verifica registro de ediciones en historial
+- [x] test_draft_linked_to_final_invoice - Verifica vinculación a factura final
+- [x] test_full_flow_traceability - Test E2E del flujo completo
+
+Clase `TestDraftOperations`:
+- [x] test_cancel_draft - Cancelación de borradores
+- [x] test_new_draft_cancels_existing - Nuevo borrador cancela anterior
+- [x] test_get_active_draft_by_chat - Búsqueda por chat
+- [x] test_update_draft_step_with_data - Actualización de paso con datos
+
+Clase `TestChangeHistory`:
+- [x] test_change_history_format - Verificación de formato del historial
+- [x] test_multiple_sources_in_history - Múltiples fuentes (ai, user, system)
+
+**Total:** 11 tests de trazabilidad
+
+**Estado:** ✅ COMPLETADO (2024-12-30)
 
 ---
 
-### Fase 12: test_business_metrics.py ⬜
+### Fase 12: test_business_metrics.py ✅
 
-**Archivo a expandir:** `tests/unit/test_business_metrics.py`
+**Archivo expandido:** `tests/unit/test_business_metrics.py`
 
-**Tests a agregar:**
-- [ ] test_track_new_customer
-- [ ] test_track_product_sale_with_metadata
-- [ ] test_get_top_products
-- [ ] test_customer_purchase_history
+**Tests agregados:**
+
+Clase `TestJewelryMetricsTracker` (9 tests):
+
+- [x] test_track_new_customer - Tracking de cliente nuevo
+- [x] test_track_returning_customer - Tracking de cliente recurrente
+- [x] test_track_customer_activity_new - track_customer_activity para nuevo
+- [x] test_track_customer_activity_returning - track_customer_activity para recurrente
+- [x] test_track_product_sale_with_metadata - Venta con metadata completa
+- [x] test_track_product_sale_without_material - Venta sin material/tipo_prenda
+- [x] test_track_sale_completed - Venta completada
+- [x] test_track_full_sale - Venta completa con todos los componentes
+
+Clase `TestJewelryMetricsService` (6 tests):
+
+- [x] test_get_top_products - Productos más vendidos
+- [x] test_get_customer_stats - Estadísticas de cliente
+- [x] test_get_seller_performance - Rendimiento de vendedores
+- [x] test_get_sales_by_material - Ventas por material
+- [x] test_get_sales_by_category - Ventas por categoría
+- [x] test_get_jewelry_metrics - Métricas completas de joyería
+
+Clase `TestJewelryDataClasses` (4 tests):
+
+- [x] test_customer_stats_to_dict - Serialización CustomerStats
+- [x] test_seller_performance_to_dict - Serialización SellerPerformance
+- [x] test_top_product_to_dict - Serialización TopProduct
+- [x] test_jewelry_metrics_to_dict - Serialización JewelryMetrics
+
+**Total:** 19 tests nuevos de métricas de joyería
+
+**Estado:** ✅ COMPLETADO (2024-12-30)
 
 ---
 
-### Fase 13: test_invoice_flow.py ⬜
+### Fase 13: test_invoice_flow.py ✅
 
-**Archivo a crear:** `tests/integration/test_invoice_flow.py`
+**Archivo creado:** `tests/integration/test_invoice_flow.py`
 
-**Tests a implementar:**
-- [ ] test_full_invoice_flow_with_traceability
-- [ ] test_data_consistency_after_edits
-- [ ] test_rollback_on_failure
+**Tests implementados:**
+
+Clase `TestInvoiceFlowWithTraceability` (4 tests):
+
+- [x] test_full_invoice_flow_with_traceability - Test E2E completo del flujo de facturación
+  - Crea borrador
+  - Registra input de texto
+  - Registra extracción de IA
+  - Registra edición del usuario
+  - Crea factura con items normalizados
+  - Vincula borrador a factura
+  - Verifica items, cliente y historial
+- [x] test_data_consistency_after_edits - Verifica consistencia tras múltiples ediciones
+  - Ediciones de precios
+  - Ediciones de cantidades
+  - Eliminación de items
+  - Edición de datos de cliente
+  - Verificación de historial de cambios
+- [x] test_rollback_on_failure - Verifica manejo de errores sin datos huérfanos
+- [x] test_customer_find_or_create - Verifica deduplicación de clientes por cédula
+
+Clase `TestDataConsistency` (2 tests):
+
+- [x] test_invoice_items_normalized_and_json - Verifica almacenamiento dual (tabla + JSON)
+- [x] test_update_invoice_preserves_items - Verifica reemplazo correcto de items
+
+Clase `TestInvoiceFlowMetrics` (2 tests):
+
+- [x] test_metrics_tracked_on_sale - Verifica tracking de métricas en venta completa
+  - Evento CUSTOMER_NEW
+  - Evento PRODUCT_SOLD con metadata (material, tipo_prenda)
+  - Evento SALE_COMPLETED
+- [x] test_returning_customer_tracked - Verifica tracking de cliente recurrente
+  - Evento CUSTOMER_NEW (primera compra)
+  - Evento CUSTOMER_RETURNING (siguiente compra)
+
+**Total:** 8 tests de integración
+
+**Estado:** ✅ COMPLETADO (2024-12-30)
 
 ---
 
@@ -356,4 +434,4 @@ organizations (1) ──┬──> (N) users
 
 ---
 
-*Última actualización: 2024-12-30 - Fase 8 completada*
+*Última actualización: 2024-12-30 - Fase 13 completada*

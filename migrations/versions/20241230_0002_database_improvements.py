@@ -84,13 +84,13 @@ def upgrade() -> None:
     op.create_index('ix_customers_org_email', 'customers', ['organization_id', 'email'])
 
     # =========================================================================
-    # 3. ADD CUSTOMER_ID FK TO INVOICES (after customers table exists)
+    # 3. ADD CUSTOMER_ID TO INVOICES (after customers table exists)
+    # Note: For SQLite, FK constraint is at model level, not DB level
     # =========================================================================
 
     op.add_column('invoices', sa.Column(
         'customer_id',
         sa.String(36),
-        sa.ForeignKey('customers.id', ondelete='SET NULL'),
         nullable=True
     ))
     op.create_index('ix_invoices_customer_id', 'invoices', ['customer_id'])

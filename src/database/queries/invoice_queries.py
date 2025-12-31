@@ -640,12 +640,22 @@ async def create_invoice_with_items_async(
         # 3. Preparar items para JSON (compatibilidad)
         items_json = []
         for item in items:
-            items_json.append({
+            cantidad = item.get('cantidad', 1)
+            precio = item.get('precio', item.get('precio_unitario', 0))
+            item_json = {
                 "descripcion": item.get('descripcion', item.get('nombre', 'Item')),
-                "cantidad": item.get('cantidad', 1),
-                "precio": item.get('precio', item.get('precio_unitario', 0)),
-                "subtotal": item.get('cantidad', 1) * item.get('precio', item.get('precio_unitario', 0))
-            })
+                "cantidad": cantidad,
+                "precio": precio,
+                "subtotal": cantidad * precio
+            }
+            # Incluir campos opcionales de joyería si existen
+            if item.get('material'):
+                item_json['material'] = item['material']
+            if item.get('peso_gramos'):
+                item_json['peso_gramos'] = item['peso_gramos']
+            if item.get('tipo_prenda'):
+                item_json['tipo_prenda'] = item['tipo_prenda']
+            items_json.append(item_json)
 
         # 4. Crear invoice
         invoice_data['customer_id'] = customer_id
