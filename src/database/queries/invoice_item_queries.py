@@ -21,34 +21,69 @@ logger = get_logger(__name__)
 # QUERIES SINCRÓNICAS (compatibilidad)
 # ============================================================================
 
-def get_item_by_id(db: Session, item_id: int) -> Optional[InvoiceItem]:
+def get_item_by_id(
+    db: Session,
+    item_id: int,
+    org_id: Optional[str] = None
+) -> Optional[InvoiceItem]:
     """
-    Busca un item por su ID.
+    Busca un item por su ID con validación multi-tenant.
 
     Args:
         db: Sesión de base de datos
         item_id: ID del item
+        org_id: ID de organización para validación de seguridad (requerido en producción)
 
     Returns:
-        Item encontrado o None
+        Item encontrado o None si no existe o no pertenece a la organización
     """
-    return db.query(InvoiceItem).filter(InvoiceItem.id == item_id).first()
+    if org_id:
+        # Validación multi-tenant: join con Invoice para verificar organización
+        return db.query(InvoiceItem)\
+            .join(Invoice, InvoiceItem.invoice_id == Invoice.id)\
+            .filter(
+                and_(
+                    InvoiceItem.id == item_id,
+                    Invoice.organization_id == org_id
+                )
+            ).first()
+    else:
+        # Sin validación de org (solo para compatibilidad, evitar en producción)
+        logger.warning(f"get_item_by_id llamado sin org_id para item {item_id}")
+        return db.query(InvoiceItem).filter(InvoiceItem.id == item_id).first()
 
 
-def get_items_by_invoice(db: Session, invoice_id: str) -> List[InvoiceItem]:
+def get_items_by_invoice(
+    db: Session,
+    invoice_id: str,
+    org_id: Optional[str] = None
+) -> List[InvoiceItem]:
     """
-    Obtiene todos los items de una factura.
+    Obtiene todos los items de una factura con validación multi-tenant.
 
     Args:
         db: Sesión de base de datos
         invoice_id: ID de la factura
+        org_id: ID de organización para validación de seguridad
 
     Returns:
         Lista de items ordenados por número
     """
-    return db.query(InvoiceItem).filter(
-        InvoiceItem.invoice_id == invoice_id
-    ).order_by(InvoiceItem.numero).all()
+    if org_id:
+        # Validación multi-tenant
+        return db.query(InvoiceItem)\
+            .join(Invoice, InvoiceItem.invoice_id == Invoice.id)\
+            .filter(
+                and_(
+                    InvoiceItem.invoice_id == invoice_id,
+                    Invoice.organization_id == org_id
+                )
+            ).order_by(InvoiceItem.numero).all()
+    else:
+        logger.warning(f"get_items_by_invoice llamado sin org_id para factura {invoice_id}")
+        return db.query(InvoiceItem).filter(
+            InvoiceItem.invoice_id == invoice_id
+        ).order_by(InvoiceItem.numero).all()
 
 
 def create_invoice_item(db: Session, item_data: dict) -> Optional[InvoiceItem]:
@@ -158,43 +193,76 @@ def delete_items_by_invoice(db: Session, invoice_id: str) -> int:
 
 async def get_item_by_id_async(
     db: AsyncSession,
-    item_id: int
+    item_id: int,
+    org_id: Optional[str] = None
 ) -> Optional[InvoiceItem]:
     """
-    Busca un item por su ID (async).
+    Busca un item por su ID con validación multi-tenant (async).
 
     Args:
         db: AsyncSession de base de datos
         item_id: ID del item
+        org_id: ID de organización para validación de seguridad (requerido en producción)
 
     Returns:
-        Item encontrado o None
+        Item encontrado o None si no existe o no pertenece a la organización
     """
-    result = await db.execute(
-        select(InvoiceItem).where(InvoiceItem.id == item_id)
-    )
+    if org_id:
+        # Validación multi-tenant: join con Invoice para verificar organización
+        result = await db.execute(
+            select(InvoiceItem)
+            .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
+            .where(
+                and_(
+                    InvoiceItem.id == item_id,
+                    Invoice.organization_id == org_id
+                )
+            )
+        )
+    else:
+        logger.warning(f"get_item_by_id_async llamado sin org_id para item {item_id}")
+        result = await db.execute(
+            select(InvoiceItem).where(InvoiceItem.id == item_id)
+        )
     return result.scalar_one_or_none()
 
 
 async def get_items_by_invoice_async(
     db: AsyncSession,
-    invoice_id: str
+    invoice_id: str,
+    org_id: Optional[str] = None
 ) -> List[InvoiceItem]:
     """
-    Obtiene todos los items de una factura (async).
+    Obtiene todos los items de una factura con validación multi-tenant (async).
 
     Args:
         db: AsyncSession de base de datos
         invoice_id: ID de la factura
+        org_id: ID de organización para validación de seguridad
 
     Returns:
         Lista de items ordenados por número
     """
-    result = await db.execute(
-        select(InvoiceItem)
-        .where(InvoiceItem.invoice_id == invoice_id)
-        .order_by(InvoiceItem.numero)
-    )
+    if org_id:
+        # Validación multi-tenant
+        result = await db.execute(
+            select(InvoiceItem)
+            .join(Invoice, InvoiceItem.invoice_id == Invoice.id)
+            .where(
+                and_(
+                    InvoiceItem.invoice_id == invoice_id,
+                    Invoice.organization_id == org_id
+                )
+            )
+            .order_by(InvoiceItem.numero)
+        )
+    else:
+        logger.warning(f"get_items_by_invoice_async llamado sin org_id para factura {invoice_id}")
+        result = await db.execute(
+            select(InvoiceItem)
+            .where(InvoiceItem.invoice_id == invoice_id)
+            .order_by(InvoiceItem.numero)
+        )
     return list(result.scalars().all())
 
 
@@ -287,21 +355,23 @@ async def create_invoice_items_async(
 async def update_item_async(
     db: AsyncSession,
     item_id: int,
-    update_data: dict
+    update_data: dict,
+    org_id: Optional[str] = None
 ) -> Optional[InvoiceItem]:
     """
-    Actualiza un item de factura (async).
+    Actualiza un item de factura con validación multi-tenant (async).
 
     Args:
         db: AsyncSession de base de datos
         item_id: ID del item
         update_data: Campos a actualizar
+        org_id: ID de organización para validación de seguridad
 
     Returns:
-        Item actualizado o None si no se encontró
+        Item actualizado o None si no se encontró o no pertenece a la organización
     """
     try:
-        item = await get_item_by_id_async(db, item_id)
+        item = await get_item_by_id_async(db, item_id, org_id)
         if not item:
             return None
 
@@ -331,20 +401,22 @@ async def update_item_async(
 
 async def delete_item_async(
     db: AsyncSession,
-    item_id: int
+    item_id: int,
+    org_id: Optional[str] = None
 ) -> bool:
     """
-    Elimina un item de factura (async).
+    Elimina un item de factura con validación multi-tenant (async).
 
     Args:
         db: AsyncSession de base de datos
         item_id: ID del item
+        org_id: ID de organización para validación de seguridad
 
     Returns:
-        True si se eliminó correctamente
+        True si se eliminó correctamente, False si no existe o no pertenece a la org
     """
     try:
-        item = await get_item_by_id_async(db, item_id)
+        item = await get_item_by_id_async(db, item_id, org_id)
         if item:
             await db.delete(item)
             await db.commit()

@@ -1,9 +1,25 @@
 """
 Servicio de Edición de Items
 
+DEPRECATED: Este módulo está obsoleto y será eliminado en futuras versiones.
+La lógica de edición de items ahora está implementada en:
+- src/bot/handlers/callbacks.py (edición vía callbacks inline)
+- src/bot/handlers/invoice.py (funciones editar_item_*)
+
+Este archivo se mantiene temporalmente por compatibilidad.
+Fecha de deprecación: 2026-01-01
+
 Maneja la lógica de edición de items en facturas.
 Extraído de invoice.py para seguir el principio de responsabilidad única.
 """
+
+import warnings
+
+warnings.warn(
+    "item_editor_service está deprecated. Use callbacks.py o invoice.py directamente",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 from typing import Optional
 from dataclasses import dataclass

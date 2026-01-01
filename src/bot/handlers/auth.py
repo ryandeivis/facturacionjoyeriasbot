@@ -25,7 +25,7 @@ from src.utils.crypto import verify_password
 from src.utils.validators import IdentityValidator
 from src.utils.errors import handle_errors, DatabaseError, AuthenticationError
 from src.utils.rate_limiter import check_login_rate
-from src.database.connection import get_db, init_db, create_tables
+from src.database.connection import get_db_context, init_db, create_tables
 from src.database.queries.user_queries import get_user_by_cedula, update_last_login
 from src.database.queries.invoice_queries import get_invoices_by_vendedor
 from src.bot.handlers.shared import (
@@ -117,13 +117,11 @@ async def recibir_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     cedula = result.sanitized
 
     # Buscar usuario en base de datos
-    db = next(get_db())
-    try:
-        usuario = get_user_by_cedula(db, cedula)
-    except Exception as e:
-        raise DatabaseError(f"Error buscando usuario: {e}", original_error=e)
-    finally:
-        db.close()
+    with get_db_context() as db:
+        try:
+            usuario = get_user_by_cedula(db, cedula)
+        except Exception as e:
+            raise DatabaseError(f"Error buscando usuario: {e}", original_error=e)
 
     if not usuario:
         await update.message.reply_text(MENSAJES['usuario_no_encontrado'])
@@ -193,9 +191,8 @@ async def recibir_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     # Actualizar último login
     try:
-        db = next(get_db())
-        update_last_login(db, cedula)
-        db.close()
+        with get_db_context() as db:
+            update_last_login(db, cedula)
     except Exception as e:
         logger.error(f"Error al actualizar último login: {e}")
 
@@ -290,13 +287,11 @@ async def mostrar_mis_facturas(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = context.user_data.get('user_id')
     org_id = context.user_data.get('organization_id')
 
-    db = next(get_db())
-    try:
-        facturas = get_invoices_by_vendedor(db, user_id, org_id, limit=10)
-    except Exception as e:
-        raise DatabaseError(f"Error obteniendo facturas: {e}", original_error=e)
-    finally:
-        db.close()
+    with get_db_context() as db:
+        try:
+            facturas = get_invoices_by_vendedor(db, user_id, org_id, limit=10)
+        except Exception as e:
+            raise DatabaseError(f"Error obteniendo facturas: {e}", original_error=e)
 
     if not facturas:
         await update.message.reply_text(
@@ -344,6 +339,8 @@ def get_auth_conversation_handler() -> ConversationHandler:
         cliente_direccion,
         cliente_ciudad,
         cliente_email,
+        cliente_telefono,
+        cliente_cedula,
         generar_factura,
         cancelar_factura,
         # Handlers de edición granular
@@ -392,6 +389,12 @@ def get_auth_conversation_handler() -> ConversationHandler:
             ],
             CLIENTE_EMAIL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_email)
+            ],
+            CLIENTE_TELEFONO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_telefono)
+            ],
+            CLIENTE_CEDULA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_cedula)
             ],
             GENERAR_FACTURA: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, generar_factura)

@@ -8,7 +8,8 @@ Soporta operaciones sync y async con filtrado por tenant.
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, func
-from typing import Optional, List
+from sqlalchemy.exc import IntegrityError
+from typing import Optional, List, Tuple
 
 from src.database.models import Customer
 from src.utils.logger import get_logger
@@ -290,33 +291,95 @@ async def find_or_create_customer_async(
     Raises:
         ValueError: Si no se puede crear el cliente
     """
-    customer = None
-
-    # Buscar por cédula si existe
-    cedula = customer_data.get('cedula')
-    if cedula:
-        customer = await get_customer_by_cedula_async(db, cedula, org_id)
-        if customer:
-            logger.info(f"Cliente encontrado por cédula: {cedula}")
-            return customer
-
-    # Buscar por teléfono si existe
-    telefono = customer_data.get('telefono')
-    if telefono and not customer:
-        customer = await get_customer_by_telefono_async(db, telefono, org_id)
-        if customer:
-            logger.info(f"Cliente encontrado por teléfono: {telefono}")
-            return customer
-
-    # Crear nuevo cliente
-    customer_data['organization_id'] = org_id
-    customer = await create_customer_async(db, customer_data)
-
-    if not customer:
-        raise ValueError("No se pudo crear el cliente")
-
-    logger.info(f"Cliente nuevo creado: {customer.nombre}")
+    # Usar la versión segura que maneja race conditions
+    customer, created = await find_or_create_customer_safe_async(db, org_id, customer_data)
     return customer
+
+
+async def find_or_create_customer_safe_async(
+    db: AsyncSession,
+    org_id: str,
+    customer_data: dict,
+    max_retries: int = 3
+) -> Tuple[Customer, bool]:
+    """
+    Busca un cliente existente o crea uno nuevo con protección contra race conditions.
+
+    Usa un patrón de upsert atómico con manejo de IntegrityError para evitar
+    duplicados cuando múltiples requests llegan simultáneamente.
+
+    Args:
+        db: AsyncSession de base de datos
+        org_id: ID de organización
+        customer_data: Datos del cliente (nombre, cedula, telefono, etc.)
+        max_retries: Número máximo de reintentos en caso de conflicto
+
+    Returns:
+        Tuple de (Cliente, bool) donde bool indica si fue creado (True) o encontrado (False)
+
+    Raises:
+        ValueError: Si no se puede crear el cliente después de max_retries
+    """
+    cedula = customer_data.get('cedula')
+    telefono = customer_data.get('telefono')
+
+    for attempt in range(max_retries):
+        # 1. Buscar cliente existente
+        customer = None
+
+        # Buscar por cédula si existe
+        if cedula:
+            customer = await get_customer_by_cedula_async(db, cedula, org_id)
+            if customer:
+                logger.info(f"Cliente encontrado por cédula: {cedula}")
+                return customer, False
+
+        # Buscar por teléfono si existe
+        if telefono and not customer:
+            customer = await get_customer_by_telefono_async(db, telefono, org_id)
+            if customer:
+                logger.info(f"Cliente encontrado por teléfono: {telefono}")
+                return customer, False
+
+        # 2. Intentar crear nuevo cliente
+        try:
+            customer_data_copy = customer_data.copy()
+            customer_data_copy['organization_id'] = org_id
+
+            customer = Customer(**customer_data_copy)
+            db.add(customer)
+            await db.flush()  # Flush para detectar IntegrityError antes del commit
+
+            logger.info(f"Cliente nuevo creado: {customer.nombre}")
+            return customer, True
+
+        except IntegrityError as e:
+            # Conflicto de unicidad - otro request ya creó este cliente
+            await db.rollback()
+            logger.warning(
+                f"Conflicto creando cliente (intento {attempt + 1}/{max_retries}): {e}"
+            )
+
+            # Buscar el cliente que ya fue creado por otro request
+            if cedula:
+                customer = await get_customer_by_cedula_async(db, cedula, org_id)
+                if customer:
+                    logger.info(f"Cliente encontrado después de conflicto: {cedula}")
+                    return customer, False
+
+            if telefono:
+                customer = await get_customer_by_telefono_async(db, telefono, org_id)
+                if customer:
+                    logger.info(f"Cliente encontrado después de conflicto: {telefono}")
+                    return customer, False
+
+            # Si no lo encontramos, reintentar
+            if attempt == max_retries - 1:
+                raise ValueError(
+                    f"No se pudo crear cliente después de {max_retries} intentos"
+                )
+
+    raise ValueError("No se pudo crear el cliente")
 
 
 async def update_customer_async(

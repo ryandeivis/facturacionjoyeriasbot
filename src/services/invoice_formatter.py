@@ -1,9 +1,25 @@
 """
 Servicio de Formateo de Facturas
 
+DEPRECATED: Este módulo está obsoleto y será eliminado en futuras versiones.
+Las funciones de formateo han sido movidas a:
+- src/bot/handlers/shared/utils.py (format_currency, format_title_case)
+- src/services/html_generator.py (generación de HTML/PDF)
+
+Este archivo se mantiene temporalmente por compatibilidad.
+Fecha de deprecación: 2026-01-01
+
 Maneja el formateo de datos de factura para presentación.
 Extraído de invoice.py para seguir el principio de responsabilidad única.
 """
+
+import warnings
+
+warnings.warn(
+    "invoice_formatter está deprecated. Use shared/utils.py o html_generator.py",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 from typing import Optional
 

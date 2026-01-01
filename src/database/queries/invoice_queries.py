@@ -7,7 +7,8 @@ Soporta operaciones sync y async con filtrado por tenant.
 
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, func
+from sqlalchemy import select, and_, func, text
+from sqlalchemy.exc import IntegrityError
 from typing import Optional, List
 from datetime import datetime
 
@@ -266,6 +267,102 @@ async def generate_invoice_number_async(
     return f"{prefix_pattern}{new_num:04d}"
 
 
+async def generate_invoice_number_safe_async(
+    db: AsyncSession,
+    org_id: str,
+    max_retries: int = 3
+) -> str:
+    """
+    Genera un número de factura único con protección contra race conditions.
+
+    Usa SELECT FOR UPDATE para bloquear la fila durante la generación,
+    evitando números duplicados bajo concurrencia.
+
+    Args:
+        db: AsyncSession de base de datos
+        org_id: ID de organización
+        max_retries: Número máximo de reintentos en caso de conflicto
+
+    Returns:
+        Número de factura generado único
+
+    Raises:
+        IntegrityError: Si después de max_retries sigue habiendo conflicto
+    """
+    for attempt in range(max_retries):
+        try:
+            now = datetime.utcnow()
+
+            # Obtener prefijo del tenant
+            config_result = await db.execute(
+                select(TenantConfig).where(TenantConfig.organization_id == org_id)
+            )
+            config = config_result.scalar_one_or_none()
+            prefix = config.invoice_prefix if config else settings.INVOICE_PREFIX
+
+            prefix_pattern = f"{prefix}-{now.strftime('%Y%m')}-"
+
+            # SELECT FOR UPDATE para bloquear y evitar race condition
+            # Esto bloquea la última factura del mes hasta que se haga commit
+            invoice_result = await db.execute(
+                select(Invoice)
+                .where(
+                    and_(
+                        Invoice.organization_id == org_id,
+                        Invoice.numero_factura.like(f"{prefix_pattern}%"),
+                        Invoice.is_deleted == False
+                    )
+                )
+                .order_by(Invoice.numero_factura.desc())
+                .limit(1)
+                .with_for_update(skip_locked=False)
+            )
+            last_invoice = invoice_result.scalar_one_or_none()
+
+            if last_invoice:
+                numero = str(last_invoice.numero_factura)
+                last_num = int(numero.split("-")[-1])
+                new_num = last_num + 1
+            else:
+                new_num = 1
+
+            numero_factura = f"{prefix_pattern}{new_num:04d}"
+
+            # Verificar que no existe (por si acaso)
+            exists_result = await db.execute(
+                select(Invoice.id).where(
+                    and_(
+                        Invoice.organization_id == org_id,
+                        Invoice.numero_factura == numero_factura
+                    )
+                )
+            )
+            if exists_result.scalar_one_or_none() is not None:
+                logger.warning(
+                    f"Número de factura {numero_factura} ya existe, reintentando... "
+                    f"(intento {attempt + 1}/{max_retries})"
+                )
+                continue
+
+            logger.debug(f"Número de factura generado: {numero_factura}")
+            return numero_factura
+
+        except IntegrityError as e:
+            logger.warning(
+                f"Conflicto generando número de factura (intento {attempt + 1}): {e}"
+            )
+            await db.rollback()
+            if attempt == max_retries - 1:
+                raise
+
+    # Si llegamos aquí, algo salió muy mal
+    raise IntegrityError(
+        "No se pudo generar número de factura único después de múltiples intentos",
+        params=None,
+        orig=None
+    )
+
+
 async def create_invoice_async(
     db: AsyncSession,
     invoice_data: dict
@@ -286,9 +383,9 @@ async def create_invoice_async(
 
         org_id = invoice_data["organization_id"]
 
-        # Generar número de factura si no viene
+        # Generar número de factura si no viene (usando versión segura)
         if "numero_factura" not in invoice_data:
-            invoice_data["numero_factura"] = await generate_invoice_number_async(db, org_id)
+            invoice_data["numero_factura"] = await generate_invoice_number_safe_async(db, org_id)
 
         invoice = Invoice(**invoice_data)
         db.add(invoice)
@@ -633,9 +730,9 @@ async def create_invoice_with_items_async(
             except ValueError as e:
                 logger.warning(f"No se pudo crear cliente: {e}")
 
-        # 2. Generar número de factura si no viene
+        # 2. Generar número de factura si no viene (usando versión segura)
         if "numero_factura" not in invoice_data:
-            invoice_data["numero_factura"] = await generate_invoice_number_async(db, org_id)
+            invoice_data["numero_factura"] = await generate_invoice_number_safe_async(db, org_id)
 
         # 3. Preparar items para JSON (compatibilidad)
         items_json = []

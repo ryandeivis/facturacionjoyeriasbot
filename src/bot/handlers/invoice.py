@@ -640,11 +640,45 @@ async def cliente_ciudad(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def cliente_email(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recibe el email del cliente y muestra resumen"""
+    """Recibe el email del cliente y pide teléfono"""
     email = update.message.text.strip()
 
     if email.lower() != 'omitir':
         context.user_data['cliente_email'] = email
+
+    await update.message.reply_text(
+        "📱 Teléfono del cliente:\n"
+        "   Escribe 'omitir' si no aplica"
+    )
+    return CLIENTE_TELEFONO
+
+
+async def cliente_telefono(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe el teléfono del cliente y pide cédula"""
+    telefono = update.message.text.strip()
+
+    if telefono.lower() != 'omitir':
+        # Validar teléfono básico
+        telefono_limpio = ''.join(c for c in telefono if c.isdigit())
+        if telefono_limpio:
+            context.user_data['cliente_telefono'] = telefono
+
+    await update.message.reply_text(
+        "📋 Cédula/NIT del cliente:\n"
+        "   Escribe 'omitir' si no aplica"
+    )
+    return CLIENTE_CEDULA
+
+
+async def cliente_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe la cédula del cliente y muestra resumen"""
+    cedula = update.message.text.strip()
+
+    if cedula.lower() != 'omitir':
+        # Validar cédula básica
+        cedula_limpia = ''.join(c for c in cedula if c.isdigit() or c == '-')
+        if cedula_limpia:
+            context.user_data['cliente_cedula'] = cedula
 
     # Mostrar resumen con todos los datos
     await _mostrar_resumen_factura(update, context)
@@ -676,9 +710,11 @@ async def _mostrar_resumen_factura(update: Update, context: ContextTypes.DEFAULT
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         "👤 CLIENTE\n"
         f"   Nombre: {context.user_data.get('cliente_nombre', 'N/A')}\n"
+        f"   Cédula/NIT: {context.user_data.get('cliente_cedula', 'N/A')}\n"
+        f"   Teléfono: {context.user_data.get('cliente_telefono', 'N/A')}\n"
+        f"   Email: {context.user_data.get('cliente_email', 'N/A')}\n"
         f"   Dirección: {context.user_data.get('cliente_direccion', 'N/A')}\n"
-        f"   Ciudad: {context.user_data.get('cliente_ciudad', 'N/A')}\n"
-        f"   Email: {context.user_data.get('cliente_email', 'N/A')}\n\n"
+        f"   Ciudad: {context.user_data.get('cliente_ciudad', 'N/A')}\n\n"
         f"📦 PRODUCTOS\n{items_text}"
         f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"💰 Subtotal: {format_currency(subtotal)}\n"
@@ -727,7 +763,6 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
         try:
-            db = next(get_db())
             org_id = context.user_data.get('organization_id')
 
             # Calcular impuesto usando tasa configurada
@@ -755,9 +790,9 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "n8n_processed": True
             }
 
-            # Crear factura en BD
-            invoice = create_invoice(db, invoice_data)
-            db.close()
+            # Crear factura en BD usando context manager (evita connection leak)
+            with get_db_context() as db:
+                invoice = create_invoice(db, invoice_data)
 
             if invoice:
                 # Audit: factura creada exitosamente

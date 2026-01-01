@@ -198,11 +198,10 @@ def _persist_event_to_db(
         return
 
     try:
-        from src.database.connection import get_db
+        from src.database.connection import get_db_context
         from src.database.queries.metrics_queries import create_metric_event
 
-        db = next(get_db())
-        try:
+        with get_db_context() as db:
             create_metric_event(
                 db=db,
                 event_type=event_type,
@@ -213,8 +212,6 @@ def _persist_event_to_db(
                 duration_ms=duration_ms,
                 metadata=metadata,
             )
-        finally:
-            db.close()
     except Exception as e:
         # Log pero no falla - la persistencia es best-effort
         logger.warning(f"Error persistiendo métrica en BD: {e}")
@@ -481,11 +478,10 @@ class MetricsCollector:
             Lista de eventos como diccionarios
         """
         try:
-            from src.database.connection import get_db
+            from src.database.connection import get_db_context
             from src.database.queries.metrics_queries import get_recent_events
 
-            db = next(get_db())
-            try:
+            with get_db_context() as db:
                 events = get_recent_events(
                     db=db,
                     organization_id=organization_id,
@@ -507,8 +503,6 @@ class MetricsCollector:
                     }
                     for e in events
                 ]
-            finally:
-                db.close()
         except Exception as e:
             logger.error(f"Error obteniendo eventos de BD: {e}")
             return []
@@ -531,19 +525,16 @@ class MetricsCollector:
             Diccionario con conteos por tipo de evento
         """
         try:
-            from src.database.connection import get_db
+            from src.database.connection import get_db_context
             from src.database.queries.metrics_queries import get_event_counts
 
-            db = next(get_db())
-            try:
+            with get_db_context() as db:
                 return get_event_counts(
                     db=db,
                     organization_id=organization_id,
                     since=since,
                     until=until,
                 )
-            finally:
-                db.close()
         except Exception as e:
             logger.error(f"Error obteniendo conteos de BD: {e}")
             return {}
@@ -566,19 +557,16 @@ class MetricsCollector:
             Lista de estadísticas por día
         """
         try:
-            from src.database.connection import get_db
+            from src.database.connection import get_db_context
             from src.database.queries.metrics_queries import get_daily_stats
 
-            db = next(get_db())
-            try:
+            with get_db_context() as db:
                 return get_daily_stats(
                     db=db,
                     organization_id=organization_id,
                     event_type=event_type,
                     days=days,
                 )
-            finally:
-                db.close()
         except Exception as e:
             logger.error(f"Error obteniendo stats diarias de BD: {e}")
             return []
@@ -599,18 +587,15 @@ class MetricsCollector:
             Resumen de métricas
         """
         try:
-            from src.database.connection import get_db
+            from src.database.connection import get_db_context
             from src.database.queries.metrics_queries import get_organization_summary
 
-            db = next(get_db())
-            try:
+            with get_db_context() as db:
                 return get_organization_summary(
                     db=db,
                     organization_id=organization_id,
                     since=since,
                 )
-            finally:
-                db.close()
         except Exception as e:
             logger.error(f"Error obteniendo resumen de BD: {e}")
             return {}

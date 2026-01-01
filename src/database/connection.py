@@ -280,3 +280,10 @@ class DatabaseProvider:
 
 # Instancia global del proveedor (para DI)
 db_provider = DatabaseProvider()
+
+
+# Alias para facilitar uso correcto (evitar connection leaks)
+# Usar: with get_db_context() as db:
+#           ...
+# En lugar de: db = next(get_db()); ...; db.close()
+get_db_context = get_sync_db
