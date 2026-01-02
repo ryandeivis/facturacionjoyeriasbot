@@ -55,6 +55,8 @@ DATOS_CLIENTE = InvoiceStates.DATOS_CLIENTE
 CLIENTE_DIRECCION = InvoiceStates.CLIENTE_DIRECCION
 CLIENTE_CIUDAD = InvoiceStates.CLIENTE_CIUDAD
 CLIENTE_EMAIL = InvoiceStates.CLIENTE_EMAIL
+CLIENTE_TELEFONO = InvoiceStates.CLIENTE_TELEFONO
+CLIENTE_CEDULA = InvoiceStates.CLIENTE_CEDULA
 GENERAR_FACTURA = InvoiceStates.GENERAR_FACTURA
 # Estados para edición granular
 EDITAR_SELECCIONAR_ITEM = InvoiceStates.EDITAR_SELECCIONAR_ITEM
@@ -120,13 +122,26 @@ async def recibir_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     cedula = result.sanitized
 
     # Buscar usuario en base de datos
+    # IMPORTANTE: Extraer todos los datos DENTRO del context manager
+    # para evitar DetachedInstanceError de SQLAlchemy
+    user_data_from_db = None
     with get_db_context() as db:
         try:
             usuario = get_user_by_cedula(db, cedula)
+            if usuario:
+                # Extraer datos mientras la sesión está activa
+                user_data_from_db = {
+                    'id': usuario.id,
+                    'nombre_completo': usuario.nombre_completo,
+                    'rol': usuario.rol,
+                    'password_hash': usuario.password_hash,
+                    'organization_id': usuario.organization_id,
+                    'activo': usuario.activo,
+                }
         except Exception as e:
             raise DatabaseError(f"Error buscando usuario: {e}", original_error=e)
 
-    if not usuario:
+    if not user_data_from_db:
         await update.message.reply_text(MENSAJES['usuario_no_encontrado'])
         # Audit: intento de login fallido
         audit_logger.log(
@@ -136,13 +151,13 @@ async def recibir_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return ConversationHandler.END
 
-    if not usuario.activo:
+    if not user_data_from_db['activo']:
         await update.message.reply_text(MENSAJES['usuario_inactivo'])
         # Audit: usuario inactivo
         audit_logger.log(
             action="login_attempt",
-            user_id=str(usuario.id),
-            org_id=str(usuario.organization_id),
+            user_id=str(user_data_from_db['id']),
+            org_id=str(user_data_from_db['organization_id']),
             status="failure",
             details={"reason": "usuario_inactivo"}
         )
@@ -150,14 +165,14 @@ async def recibir_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     # Guardar datos en contexto
     context.user_data['cedula'] = cedula
-    context.user_data['user_id'] = usuario.id
-    context.user_data['nombre'] = usuario.nombre_completo
-    context.user_data['rol'] = usuario.rol
-    context.user_data['password_hash'] = usuario.password_hash
-    context.user_data['organization_id'] = usuario.organization_id
+    context.user_data['user_id'] = user_data_from_db['id']
+    context.user_data['nombre'] = user_data_from_db['nombre_completo']
+    context.user_data['rol'] = user_data_from_db['rol']
+    context.user_data['password_hash'] = user_data_from_db['password_hash']
+    context.user_data['organization_id'] = user_data_from_db['organization_id']
 
     await update.message.reply_text(
-        f"👋 Hola, {usuario.nombre_completo}\n\n"
+        f"👋 Hola, {user_data_from_db['nombre_completo']}\n\n"
         "🔐 Ingresa tu contraseña:"
     )
 

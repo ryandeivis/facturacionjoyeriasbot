@@ -103,7 +103,7 @@ def create_invoice(db: Session, invoice_data: dict) -> Optional[Invoice]:
 def get_invoices_by_vendedor(
     db: Session,
     vendedor_id: int,
-    org_id: Optional[str] = None,
+    org_id: str,
     limit: int = 20
 ) -> List[Invoice]:
     """
@@ -112,26 +112,29 @@ def get_invoices_by_vendedor(
     Args:
         db: Sesión de base de datos
         vendedor_id: ID del vendedor
-        org_id: ID de organización (opcional)
+        org_id: ID de organización (OBLIGATORIO para seguridad multi-tenant)
         limit: Número máximo de facturas a retornar
 
     Returns:
         Lista de facturas
-    """
-    query = db.query(Invoice).filter(
-        Invoice.vendedor_id == vendedor_id,
-        Invoice.is_deleted == False
-    )
-    if org_id:
-        query = query.filter(Invoice.organization_id == org_id)
 
-    return query.order_by(Invoice.created_at.desc()).limit(limit).all()
+    Raises:
+        ValueError: Si org_id no se proporciona
+    """
+    if not org_id:
+        raise ValueError("org_id es requerido para garantizar aislamiento multi-tenant")
+
+    return db.query(Invoice).filter(
+        Invoice.vendedor_id == vendedor_id,
+        Invoice.organization_id == org_id,
+        Invoice.is_deleted == False
+    ).order_by(Invoice.created_at.desc()).limit(limit).all()
 
 
 def get_invoice_by_id(
     db: Session,
     invoice_id: str,
-    org_id: Optional[str] = None
+    org_id: str
 ) -> Optional[Invoice]:
     """
     Obtiene una factura por su ID.
@@ -139,24 +142,28 @@ def get_invoice_by_id(
     Args:
         db: Sesión de base de datos
         invoice_id: ID de la factura
-        org_id: ID de organización (opcional)
+        org_id: ID de organización (OBLIGATORIO para seguridad multi-tenant)
 
     Returns:
         Factura encontrada o None
+
+    Raises:
+        ValueError: Si org_id no se proporciona
     """
-    query = db.query(Invoice).filter(
+    if not org_id:
+        raise ValueError("org_id es requerido para garantizar aislamiento multi-tenant")
+
+    return db.query(Invoice).filter(
         Invoice.id == invoice_id,
+        Invoice.organization_id == org_id,
         Invoice.is_deleted == False
-    )
-    if org_id:
-        query = query.filter(Invoice.organization_id == org_id)
-    return query.first()
+    ).first()
 
 
 def get_invoice_by_number(
     db: Session,
     numero_factura: str,
-    org_id: Optional[str] = None
+    org_id: str
 ) -> Optional[Invoice]:
     """
     Obtiene una factura por su número.
@@ -164,25 +171,29 @@ def get_invoice_by_number(
     Args:
         db: Sesión de base de datos
         numero_factura: Número de factura
-        org_id: ID de organización (opcional)
+        org_id: ID de organización (OBLIGATORIO para seguridad multi-tenant)
 
     Returns:
         Factura encontrada o None
+
+    Raises:
+        ValueError: Si org_id no se proporciona
     """
-    query = db.query(Invoice).filter(
+    if not org_id:
+        raise ValueError("org_id es requerido para garantizar aislamiento multi-tenant")
+
+    return db.query(Invoice).filter(
         Invoice.numero_factura == numero_factura,
+        Invoice.organization_id == org_id,
         Invoice.is_deleted == False
-    )
-    if org_id:
-        query = query.filter(Invoice.organization_id == org_id)
-    return query.first()
+    ).first()
 
 
 def update_invoice_status(
     db: Session,
     invoice_id: str,
     status: str,
-    org_id: Optional[str] = None
+    org_id: str
 ) -> bool:
     """
     Actualiza el estado de una factura.
@@ -191,11 +202,17 @@ def update_invoice_status(
         db: Sesión de base de datos
         invoice_id: ID de la factura
         status: Nuevo estado
-        org_id: ID de organización (opcional)
+        org_id: ID de organización (OBLIGATORIO para seguridad multi-tenant)
 
     Returns:
         True si se actualizó correctamente
+
+    Raises:
+        ValueError: Si org_id no se proporciona
     """
+    if not org_id:
+        raise ValueError("org_id es requerido para garantizar aislamiento multi-tenant")
+
     try:
         invoice = get_invoice_by_id(db, invoice_id, org_id)
         if invoice:
