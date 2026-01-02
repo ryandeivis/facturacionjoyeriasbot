@@ -718,12 +718,12 @@ async def metodo_pago(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     elif 'transferencia' in texto:
         context.user_data['metodo_pago'] = 'transferencia'
         await update.message.reply_text(
-            "🏦 BANCO ORIGEN\n"
+            "🏦 CUENTA DESTINO\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "¿De qué banco transfirió el cliente?",
+            "¿A qué cuenta llegó el pago?",
             reply_markup=get_bancos_keyboard()
         )
-        return BANCO_ORIGEN
+        return BANCO_DESTINO
 
     else:
         await update.message.reply_text(

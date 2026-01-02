@@ -68,7 +68,6 @@ AGREGAR_ITEM_PRECIO = InvoiceStates.AGREGAR_ITEM_PRECIO
 EDITAR_CLIENTE_CAMPO = InvoiceStates.EDITAR_CLIENTE_CAMPO
 # Estados de método de pago
 METODO_PAGO = InvoiceStates.METODO_PAGO
-BANCO_ORIGEN = InvoiceStates.BANCO_ORIGEN
 BANCO_DESTINO = InvoiceStates.BANCO_DESTINO
 
 # Inicializar base de datos al importar
@@ -357,7 +356,6 @@ def get_auth_conversation_handler() -> ConversationHandler:
         editar_cliente_campo,
         # Handlers de método de pago
         metodo_pago,
-        banco_origen,
         banco_destino
     )
     from src.bot.handlers.callbacks import handle_callback
@@ -439,9 +437,6 @@ def get_auth_conversation_handler() -> ConversationHandler:
             # Estados de método de pago
             METODO_PAGO: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, metodo_pago)
-            ],
-            BANCO_ORIGEN: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, banco_origen)
             ],
             BANCO_DESTINO: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, banco_destino)

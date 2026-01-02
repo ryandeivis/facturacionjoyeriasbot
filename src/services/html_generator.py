@@ -789,10 +789,8 @@ class HTMLGeneratorService:
         # Info adicional para transferencias
         transfer_info = ""
         if invoice.metodo_pago == 'transferencia':
-            if invoice.banco_origen:
-                transfer_info += f"<tr><td>Banco Origen:</td><td>{invoice.banco_origen}</td></tr>"
             if invoice.banco_destino:
-                transfer_info += f"<tr><td>Banco Destino:</td><td>{invoice.banco_destino}</td></tr>"
+                transfer_info += f"<tr><td>Cuenta Destino:</td><td>{invoice.banco_destino}</td></tr>"
             if invoice.referencia_pago:
                 transfer_info += f"<tr><td>Referencia:</td><td>{invoice.referencia_pago}</td></tr>"
 
