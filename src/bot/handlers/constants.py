@@ -45,6 +45,11 @@ class InvoiceStates(IntEnum):
     # Estado para edición de cliente desde pantalla confirmación
     EDITAR_CLIENTE_CAMPO = 119
 
+    # Estados para método de pago
+    METODO_PAGO = 120
+    BANCO_ORIGEN = 121
+    BANCO_DESTINO = 122
+
 
 # Constantes de límites
 MAX_ITEMS_PER_INVOICE = 6
@@ -56,5 +61,22 @@ INVOICE_CONTEXT_KEYS = [
     'cliente_direccion', 'cliente_ciudad', 'cliente_email',
     'subtotal', 'total', 'input_type', 'input_raw', 'transcripcion',
     'manual_mode', 'n8n_response', 'cliente_detectado',
-    'editing_item_index', 'editing_field', 'new_item'
+    'editing_item_index', 'editing_field', 'new_item',
+    'metodo_pago', 'banco_origen', 'banco_destino', 'referencia_pago'
+]
+
+# Métodos de pago válidos
+METODOS_PAGO = ['efectivo', 'tarjeta', 'transferencia']
+
+# Bancos comunes en Colombia
+BANCOS_COLOMBIA = [
+    'Bancolombia',
+    'Davivienda',
+    'BBVA',
+    'Banco de Bogotá',
+    'Banco Popular',
+    'Banco de Occidente',
+    'Nequi',
+    'Daviplata',
+    'Otro'
 ]

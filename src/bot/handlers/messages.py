@@ -90,23 +90,21 @@ GUIA_TEXTO = """
 ⌨️ INGRESO POR TEXTO
 ━━━━━━━━━━━━━━━━━━━━
 
-Escribe los productos a facturar.
+📌 Formato recomendado:
+   Joya, descripción detallada - $precio
 
-📌 Ejemplo:
+📌 Ejemplos:
 
-1️⃣ Anillo de compromiso oro 18k
-   Solitario con diamante 0.5ct
-   Cantidad: 1 · Precio: $2.500.000
+1️⃣ Anillo, oro 18k 5g con diamante 0.5ct - $2.500.000
 
-2️⃣ Cadena plata 925
-   Eslabones 50cm
-   Cantidad: 1 · Precio: $180.000
+2️⃣ Cadena, plata 925 eslabones 50cm - $180.000
 
-3️⃣ Aretes perlas cultivadas
-   Tipo gota
-   Cantidad: 2 · Precio: $95.000
+3️⃣ 2 Aretes, perlas cultivadas tipo gota - $95.000
 
-💡 Incluye nombre, descripción, cantidad y precio.
+💡 La coma separa el nombre de la descripción.
+   Ejemplo: "Anillo, 18k con diamante" genera:
+   • Nombre: Anillo
+   • Descripción: 18k con diamante
 """
 
 GUIA_VOZ = """
@@ -115,22 +113,22 @@ GUIA_VOZ = """
 
 Envía un mensaje de voz dictando los productos.
 
+📌 Formato recomendado:
+   "Joya coma descripción, precio X pesos"
+
 📌 Ejemplo de lo que debes decir:
 
-"Primer producto: anillo de compromiso
-en oro 18 kilates, solitario con diamante
-de medio quilate, cantidad uno,
-precio dos millones quinientos mil pesos.
+"Anillo coma oro 18 kilates con diamante,
+dos millones quinientos mil pesos.
 
-Segundo producto: cadena de plata 925,
-eslabones de 50 centímetros, cantidad uno,
-precio ciento ochenta mil pesos.
+Cadena coma plata 925 eslabones 50 centímetros,
+ciento ochenta mil pesos.
 
-Tercer producto: aretes de perlas cultivadas,
-tipo gota, cantidad dos,
-precio noventa y cinco mil pesos cada uno."
+Dos aretes coma perlas cultivadas tipo gota,
+noventa y cinco mil pesos cada uno."
 
-💡 Habla claro y menciona cantidad y precio de cada ítem.
+💡 La palabra "coma" separa el nombre de la descripción.
+   Habla claro y menciona el precio de cada ítem.
 """
 
 GUIA_FOTO = """
@@ -143,13 +141,16 @@ Envía una foto clara de:
    • Cotización previa
    • Nota de pedido
 
+📌 Formato recomendado en la foto:
+   Joya, descripción - $precio
+
 ✅ Asegúrate que la imagen tenga:
    • Buena iluminación
    • Texto legible
-   • Nombres de productos
-   • Cantidades y precios
+   • Nombres y precios visibles
 
-💡 Evita sombras y reflejos. Mantén el texto horizontal.
+💡 La coma separa el nombre de la descripción.
+   Evita sombras y reflejos.
 """
 
 

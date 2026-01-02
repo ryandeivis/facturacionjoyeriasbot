@@ -53,6 +53,8 @@ from src.bot.handlers.shared import (
     get_confirm_keyboard,
     get_confirm_inline_keyboard,
     get_generate_keyboard,
+    get_metodo_pago_keyboard,
+    get_bancos_keyboard,
     limpiar_datos_factura,
     is_authenticated,
     format_currency,
@@ -92,6 +94,10 @@ EDITAR_ITEM_PRECIO = InvoiceStates.EDITAR_ITEM_PRECIO
 AGREGAR_ITEM = InvoiceStates.AGREGAR_ITEM
 AGREGAR_ITEM_CANTIDAD = InvoiceStates.AGREGAR_ITEM_CANTIDAD
 AGREGAR_ITEM_PRECIO = InvoiceStates.AGREGAR_ITEM_PRECIO
+# Estados de método de pago
+METODO_PAGO = InvoiceStates.METODO_PAGO
+BANCO_ORIGEN = InvoiceStates.BANCO_ORIGEN
+BANCO_DESTINO = InvoiceStates.BANCO_DESTINO
 
 
 async def iniciar_nueva_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -671,7 +677,7 @@ async def cliente_telefono(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def cliente_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recibe la cédula del cliente y muestra resumen"""
+    """Recibe la cédula del cliente y pasa a método de pago"""
     cedula = update.message.text.strip()
 
     if cedula.lower() != 'omitir':
@@ -679,6 +685,80 @@ async def cliente_cedula(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         cedula_limpia = ''.join(c for c in cedula if c.isdigit() or c == '-')
         if cedula_limpia:
             context.user_data['cliente_cedula'] = cedula
+
+    # Pasar a método de pago
+    await update.message.reply_text(
+        "💳 MÉTODO DE PAGO\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "¿Cómo pagó el cliente?",
+        reply_markup=get_metodo_pago_keyboard()
+    )
+    return METODO_PAGO
+
+
+async def metodo_pago(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe el método de pago seleccionado"""
+    texto = update.message.text.strip().lower()
+
+    if 'omitir' in texto:
+        # Continuar sin método de pago
+        await _mostrar_resumen_factura(update, context)
+        return GENERAR_FACTURA
+
+    if 'efectivo' in texto:
+        context.user_data['metodo_pago'] = 'efectivo'
+        await _mostrar_resumen_factura(update, context)
+        return GENERAR_FACTURA
+
+    elif 'tarjeta' in texto:
+        context.user_data['metodo_pago'] = 'tarjeta'
+        await _mostrar_resumen_factura(update, context)
+        return GENERAR_FACTURA
+
+    elif 'transferencia' in texto:
+        context.user_data['metodo_pago'] = 'transferencia'
+        await update.message.reply_text(
+            "🏦 BANCO ORIGEN\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "¿De qué banco transfirió el cliente?",
+            reply_markup=get_bancos_keyboard()
+        )
+        return BANCO_ORIGEN
+
+    else:
+        await update.message.reply_text(
+            "❓ Opción no reconocida.\n\n"
+            "Selecciona un método de pago:",
+            reply_markup=get_metodo_pago_keyboard()
+        )
+        return METODO_PAGO
+
+
+async def banco_origen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe el banco de origen para transferencias"""
+    texto = update.message.text.strip()
+
+    if 'omitir' in texto.lower():
+        await _mostrar_resumen_factura(update, context)
+        return GENERAR_FACTURA
+
+    context.user_data['banco_origen'] = texto
+
+    await update.message.reply_text(
+        "🏦 BANCO DESTINO\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "¿A qué banco se transfirió?",
+        reply_markup=get_bancos_keyboard()
+    )
+    return BANCO_DESTINO
+
+
+async def banco_destino(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe el banco destino y muestra resumen"""
+    texto = update.message.text.strip()
+
+    if 'omitir' not in texto.lower():
+        context.user_data['banco_destino'] = texto
 
     # Mostrar resumen con todos los datos
     await _mostrar_resumen_factura(update, context)
@@ -705,6 +785,21 @@ async def _mostrar_resumen_factura(update: Update, context: ContextTypes.DEFAULT
             items_text += f"   {descripcion}\n"
         items_text += f"   {cantidad} x {format_currency(precio)} = {format_currency(item_total)}\n\n"
 
+    # Formatear método de pago
+    metodo_pago = context.user_data.get('metodo_pago')
+    pago_text = ""
+    if metodo_pago:
+        pago_icon = {'efectivo': '💵', 'tarjeta': '💳', 'transferencia': '🏦'}.get(metodo_pago, '💰')
+        pago_text = f"\n💳 MÉTODO DE PAGO\n   {pago_icon} {metodo_pago.title()}\n"
+
+        if metodo_pago == 'transferencia':
+            banco_origen = context.user_data.get('banco_origen')
+            banco_destino = context.user_data.get('banco_destino')
+            if banco_origen:
+                pago_text += f"   📤 Desde: {banco_origen}\n"
+            if banco_destino:
+                pago_text += f"   📥 Hacia: {banco_destino}\n"
+
     mensaje = (
         "📋 RESUMEN DE FACTURA\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -714,7 +809,8 @@ async def _mostrar_resumen_factura(update: Update, context: ContextTypes.DEFAULT
         f"   Teléfono: {context.user_data.get('cliente_telefono', 'N/A')}\n"
         f"   Email: {context.user_data.get('cliente_email', 'N/A')}\n"
         f"   Dirección: {context.user_data.get('cliente_direccion', 'N/A')}\n"
-        f"   Ciudad: {context.user_data.get('cliente_ciudad', 'N/A')}\n\n"
+        f"   Ciudad: {context.user_data.get('cliente_ciudad', 'N/A')}\n"
+        f"{pago_text}\n"
         f"📦 PRODUCTOS\n{items_text}"
         f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"💰 Subtotal: {format_currency(subtotal)}\n"
@@ -787,7 +883,12 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "vendedor_id": context.user_data.get('user_id'),
                 "input_type": context.user_data.get('input_type'),
                 "input_raw": context.user_data.get('input_raw'),
-                "n8n_processed": True
+                "n8n_processed": True,
+                # Método de pago
+                "metodo_pago": context.user_data.get('metodo_pago'),
+                "banco_origen": context.user_data.get('banco_origen'),
+                "banco_destino": context.user_data.get('banco_destino'),
+                "referencia_pago": context.user_data.get('referencia_pago'),
             }
 
             # Crear factura en BD usando context manager (evita connection leak)

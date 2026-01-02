@@ -7,7 +7,7 @@ Separado de shared.py para seguir el principio de responsabilidad única.
 
 from telegram import ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
 from config.constants import UserRole
-from .constants import MAX_ITEMS_PER_INVOICE, MAX_ITEM_NAME_LENGTH
+from .constants import MAX_ITEMS_PER_INVOICE, MAX_ITEM_NAME_LENGTH, BANCOS_COLOMBIA
 
 
 # ============================================================================
@@ -175,3 +175,38 @@ def get_cliente_edit_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("📧 Email", callback_data="edit_cliente_email")],
         [InlineKeyboardButton("← Volver", callback_data="back_to_confirm")]
     ])
+
+
+# ============================================================================
+# TECLADOS DE MÉTODO DE PAGO
+# ============================================================================
+
+def get_metodo_pago_keyboard() -> ReplyKeyboardMarkup:
+    """
+    Teclado para seleccionar método de pago.
+
+    Returns:
+        ReplyKeyboardMarkup con opciones de pago
+    """
+    return ReplyKeyboardMarkup([
+        ['💵 Efectivo'],
+        ['💳 Tarjeta'],
+        ['🏦 Transferencia'],
+        ['⏭️ Omitir']
+    ], resize_keyboard=True)
+
+
+def get_bancos_keyboard() -> ReplyKeyboardMarkup:
+    """
+    Teclado para seleccionar banco.
+
+    Returns:
+        ReplyKeyboardMarkup con lista de bancos
+    """
+    # Crear filas de 2 bancos cada una
+    keyboard = []
+    for i in range(0, len(BANCOS_COLOMBIA), 2):
+        row = BANCOS_COLOMBIA[i:i+2]
+        keyboard.append(row)
+    keyboard.append(['⏭️ Omitir'])
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)

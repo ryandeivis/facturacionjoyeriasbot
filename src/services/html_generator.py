@@ -72,6 +72,12 @@ class InvoiceData:
     notas: Optional[str] = None
     organization_id: Optional[str] = None
 
+    # Método de pago
+    metodo_pago: Optional[str] = None
+    banco_origen: Optional[str] = None
+    banco_destino: Optional[str] = None
+    referencia_pago: Optional[str] = None
+
     def __post_init__(self):
         if self.items is None:
             self.items = []
@@ -140,7 +146,12 @@ class HTMLGeneratorService:
             vendedor_nombre=data.get("vendedor_nombre"),
             vendedor_cedula=data.get("vendedor_cedula"),
             notas=data.get("notas"),
-            organization_id=data.get("organization_id")
+            organization_id=data.get("organization_id"),
+            # Método de pago
+            metodo_pago=data.get("metodo_pago"),
+            banco_origen=data.get("banco_origen"),
+            banco_destino=data.get("banco_destino"),
+            referencia_pago=data.get("referencia_pago")
         )
 
     def _format_currency(self, amount: float) -> str:
@@ -767,6 +778,38 @@ class HTMLGeneratorService:
 
         return "\n".join(rows)
 
+    def _render_payment_section(self, invoice: InvoiceData) -> str:
+        """Genera la sección de método de pago si está disponible"""
+        if not invoice.metodo_pago:
+            return ""
+
+        # Formatear método de pago
+        metodo_display = invoice.metodo_pago.title()
+
+        # Info adicional para transferencias
+        transfer_info = ""
+        if invoice.metodo_pago == 'transferencia':
+            if invoice.banco_origen:
+                transfer_info += f"<tr><td>Banco Origen:</td><td>{invoice.banco_origen}</td></tr>"
+            if invoice.banco_destino:
+                transfer_info += f"<tr><td>Banco Destino:</td><td>{invoice.banco_destino}</td></tr>"
+            if invoice.referencia_pago:
+                transfer_info += f"<tr><td>Referencia:</td><td>{invoice.referencia_pago}</td></tr>"
+
+        return f'''
+            <!-- Método de Pago -->
+            <div class="section-title" style="margin-top: 20px;">MÉTODO DE PAGO</div>
+            <div class="cliente-card" style="padding: 15px;">
+                <table class="cliente-table">
+                    <tr>
+                        <td style="font-weight: bold;">Forma de Pago:</td>
+                        <td>{metodo_display}</td>
+                    </tr>
+                    {transfer_info}
+                </table>
+            </div>
+        '''
+
     def _render_html(self, invoice: InvoiceData) -> str:
         """Renderiza el HTML completo de la factura estilo PARADISE GROUP"""
 
@@ -898,6 +941,7 @@ class HTMLGeneratorService:
                     </table>
                 </div>
             </div>
+            {self._render_payment_section(invoice)}
         </div>
 
         <!-- Footer - Dark elegant -->

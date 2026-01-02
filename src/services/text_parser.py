@@ -125,6 +125,14 @@ class TextParserService:
                 r'(?P<precio>\d{4,})\s*$',
                 re.IGNORECASE | re.MULTILINE
             ),
+
+            # "1 anillo oro 18k 4500000" o "2 cadenas plata 200000"
+            'quantity_simple': re.compile(
+                r'^\s*(?P<cantidad>\d+)\s+'
+                r'(?P<nombre>[a-zA-ZáéíóúñÁÉÍÓÚÑ][^$\n]*?)\s+'
+                r'(?P<precio>\d{4,})\s*$',
+                re.IGNORECASE | re.MULTILINE
+            ),
         }
 
     def parse(self, text: str) -> N8NResponse:
@@ -191,7 +199,7 @@ class TextParserService:
         matched_ranges: List[tuple[int, int]] = []
 
         # Intentar cada patrón en orden de especificidad
-        pattern_order = ['numbered_full', 'quantity_first', 'word_quantity', 'inline_price', 'simple']
+        pattern_order = ['numbered_full', 'quantity_first', 'quantity_simple', 'word_quantity', 'inline_price', 'simple']
 
         for pattern_name in pattern_order:
             pattern = self.patterns[pattern_name]
@@ -211,13 +219,35 @@ class TextParserService:
 
         return items
 
+    def _split_name_description(self, text: str) -> tuple:
+        """
+        Separa nombre de descripción usando coma como delimitador.
+
+        Formato esperado: "Anillo, 18k 5g con diamante"
+        Resultado: ("Anillo", "18k 5g con diamante")
+
+        Si no hay coma, retorna el texto completo como nombre.
+        """
+        if ',' in text:
+            parts = text.split(',', 1)
+            nombre = parts[0].strip()
+            descripcion = parts[1].strip() if len(parts) > 1 else ""
+            return nombre, descripcion
+        return text, ""
+
     def _match_to_item(self, match: re.Match, pattern_name: str) -> Optional[ParsedItem]:
         """Convierte un match regex a ParsedItem."""
         try:
-            nombre = match.group('nombre').strip()
-            # Limpiar caracteres extra
-            nombre = re.sub(r'[-,;]+$', '', nombre).strip()
+            nombre_raw = match.group('nombre').strip()
+            # Limpiar caracteres extra al final (guiones, puntos y coma)
+            nombre_raw = re.sub(r'[-;]+$', '', nombre_raw).strip()
+
+            # Separar nombre de descripción usando coma
+            nombre, descripcion = self._split_name_description(nombre_raw)
+
+            # Formatear a Title Case
             nombre = _format_title_case(nombre)
+            descripcion = _format_title_case(descripcion) if descripcion else ""
 
             # Cantidad
             if pattern_name == 'word_quantity':
@@ -237,6 +267,7 @@ class TextParserService:
 
             return ParsedItem(
                 nombre=nombre,
+                descripcion=descripcion,
                 cantidad=cantidad,
                 precio=precio
             )

@@ -220,6 +220,12 @@ class Invoice(Base, TimestampMixin, SoftDeleteMixin):
     # Notas adicionales
     notas = Column(Text, nullable=True)
 
+    # Método de pago
+    metodo_pago = Column(String(20), nullable=True)  # efectivo, tarjeta, transferencia
+    banco_origen = Column(String(50), nullable=True)  # Banco del cliente (transferencias)
+    banco_destino = Column(String(50), nullable=True)  # Banco de la joyería (transferencias)
+    referencia_pago = Column(String(50), nullable=True)  # Número de referencia/transacción
+
     # Versión para optimistic locking
     version = Column(Integer, default=1, nullable=False)
 

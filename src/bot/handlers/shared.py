@@ -22,6 +22,8 @@ from .constants import (
     MAX_ITEMS_PER_INVOICE,
     MAX_ITEM_NAME_LENGTH,
     INVOICE_CONTEXT_KEYS,
+    METODOS_PAGO,
+    BANCOS_COLOMBIA,
 )
 
 # Reexports de keyboards.py
@@ -35,6 +37,8 @@ from .keyboards import (
     get_items_edit_keyboard,
     get_item_field_keyboard,
     get_cliente_edit_keyboard,
+    get_metodo_pago_keyboard,
+    get_bancos_keyboard,
 )
 
 # Reexports de messages.py
@@ -82,12 +86,16 @@ __all__ = [
     'MAX_ITEMS_PER_INVOICE',
     'MAX_ITEM_NAME_LENGTH',
     'INVOICE_CONTEXT_KEYS',
+    'METODOS_PAGO',
+    'BANCOS_COLOMBIA',
     # Teclados Reply
     'get_menu_keyboard',
     'get_cancel_keyboard',
     'get_confirm_keyboard',
     'get_input_type_keyboard',
     'get_generate_keyboard',
+    'get_metodo_pago_keyboard',
+    'get_bancos_keyboard',
     # Teclados Inline
     'get_confirm_inline_keyboard',
     'get_items_edit_keyboard',
