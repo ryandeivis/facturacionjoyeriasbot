@@ -154,6 +154,7 @@ def get_item_field_keyboard(item_index: int) -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📦 Nombre", callback_data=f"field_{item_index}_nombre")],
+        [InlineKeyboardButton("📝 Descripción", callback_data=f"field_{item_index}_descripcion")],
         [InlineKeyboardButton("🔢 Cantidad", callback_data=f"field_{item_index}_cantidad")],
         [InlineKeyboardButton("💵 Precio", callback_data=f"field_{item_index}_precio")],
         [InlineKeyboardButton("← Volver", callback_data="edit_items_menu")]

@@ -77,6 +77,16 @@ from .utils import (
 # Re-export de config.constants para compatibilidad
 from config.constants import UserRole
 
+# Reexports de formatters.py (Clean Code - funciones centralizadas)
+from .formatters import (
+    format_items_list,
+    format_items_compact,
+    format_cliente_info,
+    format_metodo_pago,
+    format_resumen_factura,
+    calculate_items_total,
+)
+
 
 __all__ = [
     # Estados
@@ -128,6 +138,13 @@ __all__ = [
     'format_invoice_status',
     'get_organization_id',
     'get_user_id',
+    # Formatters (Clean Code)
+    'format_items_list',
+    'format_items_compact',
+    'format_cliente_info',
+    'format_metodo_pago',
+    'format_resumen_factura',
+    'calculate_items_total',
     # Telegram
     'ReplyKeyboardMarkup',
     'ReplyKeyboardRemove',

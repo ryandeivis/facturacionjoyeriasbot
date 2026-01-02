@@ -40,7 +40,7 @@ from src.utils.errors import (
     DatabaseError,
     BusinessError
 )
-from src.database.connection import get_db
+from src.database.connection import get_db, get_db_context
 from src.database.queries.invoice_queries import create_invoice
 from src.services.n8n_service import n8n_service
 from src.services.text_parser import text_parser
@@ -64,6 +64,12 @@ from src.bot.handlers.shared import (
     GUIA_TEXTO,
     GUIA_VOZ,
     GUIA_FOTO
+)
+from src.bot.handlers.formatters import (
+    format_items_list,
+    format_cliente_info,
+    format_metodo_pago,
+    calculate_items_total
 )
 from config.constants import InvoiceStatus, InputType
 from config.settings import settings
@@ -98,7 +104,257 @@ AGREGAR_ITEM_PRECIO = InvoiceStates.AGREGAR_ITEM_PRECIO
 METODO_PAGO = InvoiceStates.METODO_PAGO
 BANCO_ORIGEN = InvoiceStates.BANCO_ORIGEN
 BANCO_DESTINO = InvoiceStates.BANCO_DESTINO
+# Estado de edición de descripción
+EDITAR_ITEM_DESCRIPCION = InvoiceStates.EDITAR_ITEM_DESCRIPCION
 
+
+# ============================================================================
+# FUNCIONES HELPER PARA PROCESAR INPUT (Clean Code - SRP)
+# ============================================================================
+
+async def _procesar_input_texto(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> tuple:
+    """
+    Procesa input de texto usando parser local.
+
+    Returns:
+        Tuple[response, error_msg]: response del parser o None con mensaje de error
+    """
+    text = update.message.text
+    if not text:
+        return None, "No se recibió texto"
+
+    context.user_data['input_raw'] = text
+
+    # Track mensaje de texto
+    org_id = context.user_data.get('organization_id')
+    user_id = update.effective_user.id
+    await metrics.track_bot_message(
+        organization_id=str(org_id) if org_id else None,
+        user_id=user_id,
+        message_type="text_invoice"
+    )
+
+    # Usar parser local para texto (más rápido y sin costo)
+    response = text_parser.parse(text)
+    logger.info(f"Texto parseado localmente: {response.success}, {len(response.items)} items")
+
+    return response, None
+
+
+async def _procesar_input_voz(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> tuple:
+    """
+    Procesa input de voz: descarga audio y envía a n8n.
+
+    Returns:
+        Tuple[response, error_msg]: response de n8n o None con mensaje de error
+    """
+    voice = update.message.voice
+    if not voice:
+        return None, "No se recibió audio"
+
+    cedula = context.user_data.get('cedula')
+
+    # Crear directorio uploads si no existe
+    upload_dir = Path(settings.UPLOAD_DIR)
+    upload_dir.mkdir(exist_ok=True)
+
+    # Descargar archivo
+    file = await context.bot.get_file(voice.file_id)
+    audio_path = upload_dir / f"{voice.file_id}.ogg"
+    await file.download_to_drive(str(audio_path))
+
+    context.user_data['input_raw'] = str(audio_path)
+
+    # Track y procesar voz con métricas
+    org_id = context.user_data.get('organization_id')
+    user_id = update.effective_user.id
+    start_time = time.time()
+
+    response = await n8n_service.send_voice_input(str(audio_path), cedula)
+
+    duration_ms = (time.time() - start_time) * 1000
+    await metrics.track_bot_voice(
+        organization_id=str(org_id) if org_id else None,
+        user_id=user_id,
+        success=response.success if response else False,
+        duration_ms=duration_ms
+    )
+
+    # Track extracción IA
+    if response:
+        await metrics.track_ai_extraction(
+            organization_id=str(org_id) if org_id else "unknown",
+            user_id=user_id,
+            extraction_type="voice",
+            success=response.success,
+            duration_ms=duration_ms,
+            items_extracted=len(response.items) if response.items else 0
+        )
+
+    return response, None
+
+
+async def _procesar_input_foto(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+) -> tuple:
+    """
+    Procesa input de foto: descarga imagen y envía a n8n.
+
+    Returns:
+        Tuple[response, error_msg]: response de n8n o None con mensaje de error
+    """
+    photos = update.message.photo
+    if not photos:
+        return None, "No se recibió foto"
+
+    cedula = context.user_data.get('cedula')
+    photo = photos[-1]  # La última es la más grande
+
+    # Crear directorio uploads si no existe
+    upload_dir = Path(settings.UPLOAD_DIR)
+    upload_dir.mkdir(exist_ok=True)
+
+    # Descargar archivo
+    file = await context.bot.get_file(photo.file_id)
+    photo_path = upload_dir / f"{photo.file_id}.jpg"
+    await file.download_to_drive(str(photo_path))
+
+    context.user_data['input_raw'] = str(photo_path)
+
+    # Track y procesar foto con métricas
+    org_id = context.user_data.get('organization_id')
+    user_id = update.effective_user.id
+    start_time = time.time()
+
+    response = await n8n_service.send_photo_input(str(photo_path), cedula)
+
+    duration_ms = (time.time() - start_time) * 1000
+    await metrics.track_bot_photo(
+        organization_id=str(org_id) if org_id else None,
+        user_id=user_id,
+        success=response.success if response else False,
+        duration_ms=duration_ms
+    )
+
+    # Track extracción IA
+    if response:
+        await metrics.track_ai_extraction(
+            organization_id=str(org_id) if org_id else "unknown",
+            user_id=user_id,
+            extraction_type="photo",
+            success=response.success,
+            duration_ms=duration_ms,
+            items_extracted=len(response.items) if response.items else 0
+        )
+
+    return response, None
+
+
+def _formatear_respuesta_items(response, context: ContextTypes.DEFAULT_TYPE) -> str:
+    """
+    Formatea la respuesta con items extraídos para mostrar al usuario.
+
+    Args:
+        response: Respuesta del parser o n8n
+        context: Contexto de la conversación
+
+    Returns:
+        Mensaje formateado para enviar al usuario
+    """
+    # Formatear items con Title Case
+    formatted_items = []
+    for item in response.items:
+        formatted_item = item.copy()
+        if formatted_item.get('nombre'):
+            formatted_item['nombre'] = format_title_case(formatted_item['nombre'])
+        if formatted_item.get('descripcion'):
+            formatted_item['descripcion'] = format_title_case(formatted_item['descripcion'])
+        formatted_items.append(formatted_item)
+
+    # Formatear cliente con Title Case
+    formatted_cliente = None
+    if response.cliente:
+        formatted_cliente = response.cliente.copy()
+        if formatted_cliente.get('nombre'):
+            formatted_cliente['nombre'] = format_title_case(formatted_cliente['nombre'])
+        if formatted_cliente.get('ciudad'):
+            formatted_cliente['ciudad'] = format_title_case(formatted_cliente['ciudad'])
+
+    # Guardar respuesta completa
+    context.user_data['n8n_response'] = {
+        'items': formatted_items,
+        'cliente': formatted_cliente,
+        'vendedor': getattr(response, 'vendedor', None),
+        'factura': response.factura,
+        'totales': response.totales,
+        'transcripcion': response.transcripcion,
+        'input_type': response.input_type
+    }
+    context.user_data['items'] = formatted_items
+    context.user_data['transcripcion'] = response.transcripcion
+
+    # Guardar cliente detectado si existe
+    if formatted_cliente:
+        context.user_data['cliente_detectado'] = formatted_cliente
+
+    # Calcular total usando format_items_list
+    total = sum(
+        item.get('cantidad', 1) * item.get('precio', 0)
+        for item in formatted_items
+    )
+    context.user_data['subtotal'] = total
+    context.user_data['total'] = total
+
+    # Construir mensaje usando formatters
+    items_text = format_items_list(formatted_items)
+
+    mensaje = (
+        "📦 PRODUCTOS DETECTADOS\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{items_text}\n"
+        f"💰 Subtotal: {format_currency(total)}\n"
+    )
+
+    # Mostrar cliente detectado si existe
+    if response.cliente:
+        cliente = response.cliente
+        has_cliente_data = any([
+            cliente.get('nombre'),
+            cliente.get('telefono'),
+            cliente.get('direccion')
+        ])
+        if has_cliente_data:
+            mensaje += "\n👤 CLIENTE DETECTADO\n"
+            mensaje += "━━━━━━━━━━━━━━━━━━━━\n"
+            if cliente.get('nombre'):
+                mensaje += f"   Nombre: {cliente.get('nombre')}\n"
+            if cliente.get('telefono'):
+                mensaje += f"   Tel: {cliente.get('telefono')}\n"
+            if cliente.get('direccion'):
+                mensaje += f"   Dir: {cliente.get('direccion')}\n"
+            if cliente.get('ciudad'):
+                mensaje += f"   Ciudad: {cliente.get('ciudad')}\n"
+            if cliente.get('email'):
+                mensaje += f"   Email: {cliente.get('email')}\n"
+
+    if response.transcripcion:
+        mensaje += f"\n🎤 Transcripción: {response.transcripcion[:100]}...\n"
+
+    mensaje += "\n¿Qué deseas hacer?"
+
+    return mensaje, formatted_items
+
+
+# ============================================================================
+# HANDLERS PRINCIPALES
+# ============================================================================
 
 async def iniciar_nueva_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Inicia el proceso de crear una nueva factura"""
@@ -185,9 +441,13 @@ async def seleccionar_tipo_input(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recibe el input del usuario (texto, voz o foto)"""
+    """
+    Recibe el input del usuario (texto, voz o foto).
+
+    Refactorizado para usar funciones helper separadas (Clean Code - SRP).
+    Cada tipo de input tiene su propia función de procesamiento.
+    """
     input_type = context.user_data.get('input_type')
-    cedula = context.user_data.get('cedula')
 
     # Mostrar mensaje de procesando
     processing_msg = await update.message.reply_text(
@@ -197,127 +457,32 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     try:
         response = None
+        error_msg = None
 
+        # Delegar a función específica según tipo de input
         if input_type == InputType.TEXTO.value:
-            # Texto directo - usar parser local (no n8n)
-            text = update.message.text
-            if not text:
+            response, error_msg = await _procesar_input_texto(update, context)
+            if error_msg:
                 await processing_msg.edit_text(
-                    "⚠ No se recibió texto\n\n"
-                    "Por favor, escribe los productos:"
+                    f"⚠ {error_msg}\n\nPor favor, escribe los productos:"
                 )
                 return RECIBIR_INPUT
-
-            context.user_data['input_raw'] = text
-
-            # Track mensaje de texto
-            org_id = context.user_data.get('organization_id')
-            user_id = update.effective_user.id
-            await metrics.track_bot_message(
-                organization_id=str(org_id) if org_id else None,
-                user_id=user_id,
-                message_type="text_invoice"
-            )
-
-            # Usar parser local para texto (más rápido y sin costo)
-            response = text_parser.parse(text)
-            logger.info(f"Texto parseado localmente: {response.success}, {len(response.items)} items")
 
         elif input_type == InputType.VOZ.value:
-            # Descargar audio
-            voice = update.message.voice
-            if not voice:
+            response, error_msg = await _procesar_input_voz(update, context)
+            if error_msg:
                 await processing_msg.edit_text(
-                    "⚠ No se recibió audio\n\n"
-                    "Por favor, envía un mensaje de voz:"
+                    f"⚠ {error_msg}\n\nPor favor, envía un mensaje de voz:"
                 )
                 return RECIBIR_INPUT
-
-            # Crear directorio uploads si no existe
-            upload_dir = Path(settings.UPLOAD_DIR)
-            upload_dir.mkdir(exist_ok=True)
-
-            # Descargar archivo
-            file = await context.bot.get_file(voice.file_id)
-            audio_path = upload_dir / f"{voice.file_id}.ogg"
-            await file.download_to_drive(str(audio_path))
-
-            context.user_data['input_raw'] = str(audio_path)
-
-            # Track y procesar voz con métricas
-            org_id = context.user_data.get('organization_id')
-            user_id = update.effective_user.id
-            start_time = time.time()
-
-            response = await n8n_service.send_voice_input(str(audio_path), cedula)
-
-            duration_ms = (time.time() - start_time) * 1000
-            await metrics.track_bot_voice(
-                organization_id=str(org_id) if org_id else None,
-                user_id=user_id,
-                success=response.success if response else False,
-                duration_ms=duration_ms
-            )
-
-            # Track extracción IA
-            if response:
-                await metrics.track_ai_extraction(
-                    organization_id=str(org_id) if org_id else "unknown",
-                    user_id=user_id,
-                    extraction_type="voice",
-                    success=response.success,
-                    duration_ms=duration_ms,
-                    items_extracted=len(response.items) if response.items else 0
-                )
 
         elif input_type == InputType.FOTO.value:
-            # Descargar foto (la más grande disponible)
-            photos = update.message.photo
-            if not photos:
+            response, error_msg = await _procesar_input_foto(update, context)
+            if error_msg:
                 await processing_msg.edit_text(
-                    "⚠ No se recibió foto\n\n"
-                    "Por favor, envía una imagen:"
+                    f"⚠ {error_msg}\n\nPor favor, envía una imagen:"
                 )
                 return RECIBIR_INPUT
-
-            photo = photos[-1]  # La última es la más grande
-
-            # Crear directorio uploads si no existe
-            upload_dir = Path(settings.UPLOAD_DIR)
-            upload_dir.mkdir(exist_ok=True)
-
-            # Descargar archivo
-            file = await context.bot.get_file(photo.file_id)
-            photo_path = upload_dir / f"{photo.file_id}.jpg"
-            await file.download_to_drive(str(photo_path))
-
-            context.user_data['input_raw'] = str(photo_path)
-
-            # Track y procesar foto con métricas
-            org_id = context.user_data.get('organization_id')
-            user_id = update.effective_user.id
-            start_time = time.time()
-
-            response = await n8n_service.send_photo_input(str(photo_path), cedula)
-
-            duration_ms = (time.time() - start_time) * 1000
-            await metrics.track_bot_photo(
-                organization_id=str(org_id) if org_id else None,
-                user_id=user_id,
-                success=response.success if response else False,
-                duration_ms=duration_ms
-            )
-
-            # Track extracción IA
-            if response:
-                await metrics.track_ai_extraction(
-                    organization_id=str(org_id) if org_id else "unknown",
-                    user_id=user_id,
-                    extraction_type="photo",
-                    success=response.success,
-                    duration_ms=duration_ms,
-                    items_extracted=len(response.items) if response.items else 0
-                )
 
         else:
             await processing_msg.edit_text(
@@ -326,98 +491,9 @@ async def recibir_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             )
             return SELECCIONAR_INPUT
 
-        # Procesar respuesta de n8n
+        # Procesar respuesta exitosa
         if response and response.success and response.items:
-            # Formatear items con Title Case
-            formatted_items = []
-            for item in response.items:
-                formatted_item = item.copy()
-                if formatted_item.get('nombre'):
-                    formatted_item['nombre'] = format_title_case(formatted_item['nombre'])
-                if formatted_item.get('descripcion'):
-                    formatted_item['descripcion'] = format_title_case(formatted_item['descripcion'])
-                formatted_items.append(formatted_item)
-
-            # Formatear cliente con Title Case
-            formatted_cliente = None
-            if response.cliente:
-                formatted_cliente = response.cliente.copy()
-                if formatted_cliente.get('nombre'):
-                    formatted_cliente['nombre'] = format_title_case(formatted_cliente['nombre'])
-                if formatted_cliente.get('ciudad'):
-                    formatted_cliente['ciudad'] = format_title_case(formatted_cliente['ciudad'])
-
-            # Guardar respuesta completa para no perder datos
-            context.user_data['n8n_response'] = {
-                'items': formatted_items,
-                'cliente': formatted_cliente,
-                'vendedor': getattr(response, 'vendedor', None),
-                'factura': response.factura,
-                'totales': response.totales,
-                'transcripcion': response.transcripcion,
-                'input_type': response.input_type
-            }
-            context.user_data['items'] = formatted_items
-            context.user_data['transcripcion'] = response.transcripcion
-
-            # Guardar cliente detectado si existe
-            if formatted_cliente:
-                context.user_data['cliente_detectado'] = formatted_cliente
-
-            # Mostrar items extraídos
-            items_text = ""
-            total = 0
-            for i, item in enumerate(formatted_items, 1):
-                precio = item.get('precio', 0)
-                cantidad = item.get('cantidad', 1)
-                subtotal = precio * cantidad
-                total += subtotal
-
-                # Fix: usar 'nombre' primero, luego 'descripcion' como fallback
-                nombre = item.get('nombre', 'Producto')
-                descripcion = item.get('descripcion', '')
-
-                items_text += f"{i}. {nombre}\n"
-                if descripcion:
-                    items_text += f"   {descripcion}\n"
-                items_text += f"   Cantidad: {cantidad} x {format_currency(precio)} = {format_currency(subtotal)}\n\n"
-
-            context.user_data['subtotal'] = total
-            context.user_data['total'] = total
-
-            mensaje = (
-                "📦 PRODUCTOS DETECTADOS\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"{items_text}"
-                f"💰 Subtotal: {format_currency(total)}\n"
-            )
-
-            # Mostrar cliente detectado si existe
-            if response.cliente:
-                cliente = response.cliente
-                has_cliente_data = any([
-                    cliente.get('nombre'),
-                    cliente.get('telefono'),
-                    cliente.get('direccion')
-                ])
-                if has_cliente_data:
-                    mensaje += "\n👤 CLIENTE DETECTADO\n"
-                    mensaje += "━━━━━━━━━━━━━━━━━━━━\n"
-                    if cliente.get('nombre'):
-                        mensaje += f"   Nombre: {cliente.get('nombre')}\n"
-                    if cliente.get('telefono'):
-                        mensaje += f"   Tel: {cliente.get('telefono')}\n"
-                    if cliente.get('direccion'):
-                        mensaje += f"   Dir: {cliente.get('direccion')}\n"
-                    if cliente.get('ciudad'):
-                        mensaje += f"   Ciudad: {cliente.get('ciudad')}\n"
-                    if cliente.get('email'):
-                        mensaje += f"   Email: {cliente.get('email')}\n"
-
-            if response.transcripcion:
-                mensaje += f"\n🎤 Transcripción: {response.transcripcion[:100]}...\n"
-
-            mensaje += "\n¿Qué deseas hacer?"
+            mensaje, formatted_items = _formatear_respuesta_items(response, context)
 
             await processing_msg.edit_text(mensaje)
 
@@ -536,8 +612,8 @@ async def editar_items(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             )
             return EDITAR_ITEMS
 
-        # Calcular total
-        total = sum(item.get('precio', 0) * item.get('cantidad', 1) for item in items)
+        # Calcular total usando formatter centralizado
+        total = calculate_items_total(items)
         context.user_data['subtotal'] = total
         context.user_data['total'] = total
 
@@ -771,34 +847,9 @@ async def _mostrar_resumen_factura(update: Update, context: ContextTypes.DEFAULT
     subtotal = context.user_data.get('subtotal', 0)
     total = context.user_data.get('total', 0)
 
-    # Formatear items
-    items_text = ""
-    for i, item in enumerate(items, 1):
-        nombre = item.get('nombre', item.get('descripcion', 'Producto'))
-        descripcion = item.get('descripcion', '')
-        cantidad = item.get('cantidad', 1)
-        precio = item.get('precio', 0)
-        item_total = cantidad * precio
-
-        items_text += f"{i}. {nombre}\n"
-        if descripcion and descripcion != nombre:
-            items_text += f"   {descripcion}\n"
-        items_text += f"   {cantidad} x {format_currency(precio)} = {format_currency(item_total)}\n\n"
-
-    # Formatear método de pago
-    metodo_pago = context.user_data.get('metodo_pago')
-    pago_text = ""
-    if metodo_pago:
-        pago_icon = {'efectivo': '💵', 'tarjeta': '💳', 'transferencia': '🏦'}.get(metodo_pago, '💰')
-        pago_text = f"\n💳 MÉTODO DE PAGO\n   {pago_icon} {metodo_pago.title()}\n"
-
-        if metodo_pago == 'transferencia':
-            banco_origen = context.user_data.get('banco_origen')
-            banco_destino = context.user_data.get('banco_destino')
-            if banco_origen:
-                pago_text += f"   📤 Desde: {banco_origen}\n"
-            if banco_destino:
-                pago_text += f"   📥 Hacia: {banco_destino}\n"
+    # Usar formatters centralizados
+    items_text = format_items_list(items)
+    pago_text = format_metodo_pago(context.user_data)
 
     mensaje = (
         "📋 RESUMEN DE FACTURA\n"
@@ -810,8 +861,13 @@ async def _mostrar_resumen_factura(update: Update, context: ContextTypes.DEFAULT
         f"   Email: {context.user_data.get('cliente_email', 'N/A')}\n"
         f"   Dirección: {context.user_data.get('cliente_direccion', 'N/A')}\n"
         f"   Ciudad: {context.user_data.get('cliente_ciudad', 'N/A')}\n"
-        f"{pago_text}\n"
-        f"📦 PRODUCTOS\n{items_text}"
+    )
+
+    if pago_text:
+        mensaje += f"\n💳 MÉTODO DE PAGO\n   {pago_text}\n"
+
+    mensaje += (
+        f"\n📦 PRODUCTOS\n{items_text}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"💰 Subtotal: {format_currency(subtotal)}\n"
         f"💵 TOTAL: {format_currency(total)}\n\n"
@@ -866,6 +922,20 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             impuesto = round(subtotal * settings.TAX_RATE)
             total = subtotal + impuesto
 
+            # Normalizar items antes de guardar (BUG-001 fix)
+            items_raw = context.user_data.get('items', [])
+            items_normalized = []
+            for item in items_raw:
+                cantidad = item.get('cantidad', 1)
+                precio = item.get('precio', item.get('precio_unitario', 0))
+                items_normalized.append({
+                    "nombre": item.get('nombre', item.get('descripcion', 'Producto')),
+                    "descripcion": item.get('descripcion', ''),
+                    "cantidad": cantidad,
+                    "precio": precio,
+                    "subtotal": cantidad * precio
+                })
+
             # Preparar datos de factura
             invoice_data = {
                 "organization_id": org_id,
@@ -875,7 +945,7 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "cliente_email": context.user_data.get('cliente_email'),
                 "cliente_telefono": context.user_data.get('cliente_telefono'),
                 "cliente_cedula": context.user_data.get('cliente_cedula'),
-                "items": context.user_data.get('items', []),
+                "items": items_normalized,
                 "subtotal": subtotal,
                 "impuesto": impuesto,
                 "total": total,
@@ -892,55 +962,87 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             }
 
             # Crear factura en BD usando context manager (evita connection leak)
+            # IMPORTANTE: Extraer TODOS los datos dentro del context manager
+            # para evitar DetachedInstanceError al acceder después de cerrar sesión
+            invoice_extracted = None
             with get_db_context() as db:
                 invoice = create_invoice(db, invoice_data)
+                if invoice:
+                    # Extraer datos mientras la sesión está activa
+                    invoice_extracted = {
+                        'id': invoice.id,
+                        'numero_factura': invoice.numero_factura,
+                        'organization_id': str(invoice.organization_id),
+                        'cliente_nombre': invoice.cliente_nombre,
+                        'cliente_telefono': invoice.cliente_telefono,
+                        'cliente_cedula': invoice.cliente_cedula,
+                        'cliente_direccion': invoice.cliente_direccion,
+                        'cliente_ciudad': invoice.cliente_ciudad,
+                        'cliente_email': invoice.cliente_email,
+                        'items': [
+                            {
+                                'nombre': item.get('nombre', item.get('descripcion', 'Producto')),
+                                'descripcion': item.get('descripcion', ''),
+                                'cantidad': item.get('cantidad', 1),
+                                'precio': float(item.get('precio', item.get('precio_unitario', 0))),
+                                'subtotal': float(item.get('subtotal', 0))
+                            } for item in invoice.items
+                        ],
+                        'items_count': len(invoice.items),
+                        'subtotal': float(invoice.subtotal),
+                        'descuento': float(invoice.descuento) if invoice.descuento else 0,
+                        'impuesto': float(invoice.impuesto),
+                        'total': float(invoice.total),
+                        'metodo_pago': invoice.metodo_pago,
+                        'banco_destino': invoice.banco_destino,
+                    }
 
-            if invoice:
+            if invoice_extracted:
                 # Audit: factura creada exitosamente
                 audit_logger.create(
                     entity_type="invoice",
-                    entity_id=str(invoice.id),
+                    entity_id=str(invoice_extracted['id']),
                     new_values={
-                        "numero_factura": invoice.numero_factura,
-                        "cliente": invoice.cliente_nombre,
-                        "total": float(invoice.total),
-                        "items_count": len(invoice.items)
+                        "numero_factura": invoice_extracted['numero_factura'],
+                        "cliente": invoice_extracted['cliente_nombre'],
+                        "total": invoice_extracted['total'],
+                        "items_count": invoice_extracted['items_count']
                     }
                 )
-                logger.info(f"Factura creada: {invoice.numero_factura}")
+                logger.info(f"Factura creada: {invoice_extracted['numero_factura']}")
 
                 # Métricas de negocio: factura creada
                 await metrics.track_invoice_created(
-                    organization_id=str(org_id),
-                    amount=float(invoice.total),
+                    organization_id=invoice_extracted['organization_id'],
+                    amount=invoice_extracted['total'],
                     user_id=user_id,
                     metadata={
-                        "numero_factura": invoice.numero_factura,
-                        "items_count": len(invoice.items),
+                        "numero_factura": invoice_extracted['numero_factura'],
+                        "items_count": invoice_extracted['items_count'],
                         "input_type": context.user_data.get('input_type'),
                     }
                 )
 
                 # Actualizar mensaje
                 await processing_msg.edit_text(
-                    f"✅ Factura {invoice.numero_factura} guardada\n\n"
+                    f"✅ Factura {invoice_extracted['numero_factura']} guardada\n\n"
                     "📄 Generando PDF..."
                 )
 
                 # Generar HTML local y solicitar PDF a n8n
-                html_content, pdf_response = await _generar_pdf_factura(invoice, context)
+                html_content, pdf_response = await _generar_pdf_factura(invoice_extracted, context)
 
                 rol = context.user_data.get('rol')
 
                 if html_content or (pdf_response and pdf_response.success):
                     # Enviar HTML y PDF al usuario
-                    await _enviar_pdf_usuario(update, context, invoice, html_content, pdf_response)
+                    await _enviar_pdf_usuario(update, context, invoice_extracted, html_content, pdf_response)
 
                     await update.message.reply_text(
                         "🎉 FACTURA GENERADA\n"
                         "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                        f"📄 No: {invoice.numero_factura}\n"
-                        f"👤 {invoice.cliente_nombre}\n\n"
+                        f"📄 No: {invoice_extracted['numero_factura']}\n"
+                        f"👤 {invoice_extracted['cliente_nombre']}\n\n"
                         f"   Subtotal: {format_currency(subtotal)}\n"
                         f"   IVA ({int(settings.TAX_RATE * 100)}%): {format_currency(impuesto)}\n"
                         f"💵 Total: {format_currency(total)}\n\n"
@@ -953,8 +1055,8 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                     await update.message.reply_text(
                         "🎉 FACTURA GENERADA\n"
                         "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                        f"📄 No: {invoice.numero_factura}\n"
-                        f"👤 {invoice.cliente_nombre}\n"
+                        f"📄 No: {invoice_extracted['numero_factura']}\n"
+                        f"👤 {invoice_extracted['cliente_nombre']}\n"
                         f"💵 Total: {format_currency(total)}\n\n"
                         f"📌 Estado: Pendiente\n\n"
                         "⚠ PDF no disponible temporalmente",
@@ -998,7 +1100,7 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return GENERAR_FACTURA
 
 
-async def _generar_pdf_factura(invoice, context: ContextTypes.DEFAULT_TYPE):
+async def _generar_pdf_factura(invoice_data_dict: dict, context: ContextTypes.DEFAULT_TYPE):
     """
     Genera HTML localmente y solicita PDF a n8n.
 
@@ -1007,29 +1109,29 @@ async def _generar_pdf_factura(invoice, context: ContextTypes.DEFAULT_TYPE):
     2. Bot envía datos a n8n → n8n genera PDF → retorna URL
 
     Args:
-        invoice: Objeto Invoice de la BD
+        invoice_data_dict: Diccionario con datos de la factura (extraídos del ORM)
         context: Contexto de Telegram
 
     Returns:
         Tuple (html_content, pdf_response) o (None, None) si falla
     """
     try:
-        # Preparar datos de la factura
+        # Preparar datos de la factura para html_generator y n8n
         invoice_data = {
-            "numero_factura": invoice.numero_factura,
-            "fecha_emision": datetime.utcnow().strftime("%Y-%m-%d"),
-            "fecha_vencimiento": (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d"),
-            "cliente_nombre": invoice.cliente_nombre,
-            "cliente_direccion": invoice.cliente_direccion,
-            "cliente_ciudad": invoice.cliente_ciudad,
-            "cliente_email": invoice.cliente_email,
-            "cliente_telefono": invoice.cliente_telefono,
-            "cliente_cedula": invoice.cliente_cedula,
-            "items": invoice.items,
-            "subtotal": invoice.subtotal,
-            "descuento": invoice.descuento or 0,
-            "impuesto": invoice.impuesto,
-            "total": invoice.total,
+            "numero_factura": invoice_data_dict['numero_factura'],
+            "fecha_emision": datetime.now().strftime("%Y-%m-%d"),
+            "fecha_vencimiento": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
+            "cliente_nombre": invoice_data_dict['cliente_nombre'],
+            "cliente_direccion": invoice_data_dict.get('cliente_direccion'),
+            "cliente_ciudad": invoice_data_dict.get('cliente_ciudad'),
+            "cliente_email": invoice_data_dict.get('cliente_email'),
+            "cliente_telefono": invoice_data_dict.get('cliente_telefono'),
+            "cliente_cedula": invoice_data_dict.get('cliente_cedula'),
+            "items": invoice_data_dict['items'],
+            "subtotal": invoice_data_dict['subtotal'],
+            "descuento": invoice_data_dict.get('descuento', 0),
+            "impuesto": invoice_data_dict['impuesto'],
+            "total": invoice_data_dict['total'],
             "vendedor_nombre": context.user_data.get('nombre'),
             "vendedor_cedula": context.user_data.get('cedula'),
             "notas": None
@@ -1037,12 +1139,12 @@ async def _generar_pdf_factura(invoice, context: ContextTypes.DEFAULT_TYPE):
 
         # 1. Generar HTML localmente (para el usuario)
         html_content = html_generator.generate(invoice_data)
-        logger.info(f"HTML generado localmente para factura {invoice.numero_factura}")
+        logger.info(f"HTML generado localmente para factura {invoice_data_dict['numero_factura']}")
 
         # 2. Enviar datos a n8n para generar PDF
         pdf_response = await n8n_service.generate_pdf(
             invoice_data=invoice_data,
-            organization_id=str(invoice.organization_id)
+            organization_id=invoice_data_dict['organization_id']
         )
 
         return html_content, pdf_response
@@ -1060,7 +1162,7 @@ async def _generar_pdf_factura(invoice, context: ContextTypes.DEFAULT_TYPE):
 async def _enviar_pdf_usuario(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
-    invoice,
+    invoice_data_dict: dict,
     html_content: str,
     pdf_response
 ) -> bool:
@@ -1074,7 +1176,7 @@ async def _enviar_pdf_usuario(
     Args:
         update: Update de Telegram
         context: Contexto de Telegram
-        invoice: Objeto Invoice
+        invoice_data_dict: Diccionario con datos de la factura (extraídos del ORM)
         html_content: HTML generado localmente por el bot
         pdf_response: Respuesta de n8n con PDF
 
@@ -1088,11 +1190,13 @@ async def _enviar_pdf_usuario(
 
         pdf_enviado = False
         html_enviado = False
+        numero_factura = invoice_data_dict['numero_factura']
+        total = invoice_data_dict['total']
 
         # 1. Enviar HTML generado localmente
         if html_content:
             try:
-                html_filename = f"factura_{invoice.numero_factura}.html"
+                html_filename = f"factura_{numero_factura}.html"
                 html_path = upload_dir / html_filename
 
                 with open(html_path, 'w', encoding='utf-8') as f:
@@ -1103,12 +1207,12 @@ async def _enviar_pdf_usuario(
                         chat_id=chat_id,
                         document=f,
                         filename=html_filename,
-                        caption=f"📄 Factura {invoice.numero_factura} (HTML)\nAbre en navegador para visualizar"
+                        caption=f"📄 Factura {numero_factura} (HTML)\nAbre en navegador para visualizar"
                     )
 
                 html_path.unlink(missing_ok=True)
                 html_enviado = True
-                logger.info(f"HTML enviado para factura {invoice.numero_factura}")
+                logger.info(f"HTML enviado para factura {numero_factura}")
 
             except Exception as e:
                 logger.warning(f"Error enviando HTML: {e}")
@@ -1123,7 +1227,7 @@ async def _enviar_pdf_usuario(
                         async with session.get(pdf_response.pdf_url) as resp:
                             if resp.status == 200:
                                 pdf_bytes = await resp.read()
-                                pdf_filename = pdf_response.filename or f"factura_{invoice.numero_factura}.pdf"
+                                pdf_filename = pdf_response.filename or f"factura_{numero_factura}.pdf"
 
                                 # Guardar temporalmente
                                 pdf_path = upload_dir / pdf_filename
@@ -1136,12 +1240,12 @@ async def _enviar_pdf_usuario(
                                         chat_id=chat_id,
                                         document=f,
                                         filename=pdf_filename,
-                                        caption=f"📄 Factura {invoice.numero_factura} (PDF)\n💰 Total: {format_currency(invoice.total)}"
+                                        caption=f"📄 Factura {numero_factura} (PDF)\n💰 Total: {format_currency(total)}"
                                     )
 
                                 pdf_path.unlink(missing_ok=True)
                                 pdf_enviado = True
-                                logger.info(f"PDF enviado para factura {invoice.numero_factura}")
+                                logger.info(f"PDF enviado para factura {numero_factura}")
 
                 except Exception as e:
                     logger.warning(f"Error descargando PDF desde URL: {e}")
@@ -1155,7 +1259,7 @@ async def _enviar_pdf_usuario(
             elif pdf_response.pdf_base64:
                 try:
                     pdf_bytes = base64.b64decode(pdf_response.pdf_base64)
-                    pdf_filename = pdf_response.filename or f"factura_{invoice.numero_factura}.pdf"
+                    pdf_filename = pdf_response.filename or f"factura_{numero_factura}.pdf"
                     pdf_path = upload_dir / pdf_filename
 
                     with open(pdf_path, 'wb') as f:
@@ -1166,7 +1270,7 @@ async def _enviar_pdf_usuario(
                             chat_id=chat_id,
                             document=f,
                             filename=pdf_filename,
-                            caption=f"📄 Factura {invoice.numero_factura} (PDF)\n💰 Total: {format_currency(invoice.total)}"
+                            caption=f"📄 Factura {numero_factura} (PDF)\n💰 Total: {format_currency(total)}"
                         )
 
                     pdf_path.unlink(missing_ok=True)
@@ -1281,6 +1385,22 @@ async def editar_item_precio(update: Update, context: ContextTypes.DEFAULT_TYPE)
         items[idx]['precio'] = precio
         context.user_data['items'] = items
         _recalcular_totales(context)
+
+    return await _volver_menu_items(update, context)
+
+
+async def editar_item_descripcion(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe nueva descripción del item."""
+    texto = update.message.text.strip()
+    idx = context.user_data.get('editing_item_index', 0)
+    items = context.user_data.get('items', [])
+
+    if idx < len(items):
+        if texto.lower() == 'borrar':
+            items[idx]['descripcion'] = ''
+        else:
+            items[idx]['descripcion'] = texto
+        context.user_data['items'] = items
 
     return await _volver_menu_items(update, context)
 
@@ -1528,8 +1648,8 @@ async def ejecutar_test_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         invoice_data = {
             "numero_factura": "TEST-001",
-            "fecha_emision": datetime.utcnow().strftime("%Y-%m-%d"),
-            "fecha_vencimiento": (datetime.utcnow() + timedelta(days=30)).strftime("%Y-%m-%d"),
+            "fecha_emision": datetime.now().strftime("%Y-%m-%d"),
+            "fecha_vencimiento": (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d"),
             "cliente_nombre": "Cliente de Prueba",
             "cliente_direccion": "Calle 123 #45-67",
             "cliente_ciudad": "Bogota",
@@ -1673,6 +1793,21 @@ def get_invoice_conversation_handler() -> ConversationHandler:
             ],
             CLIENTE_EMAIL: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_email)
+            ],
+            CLIENTE_TELEFONO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_telefono)
+            ],
+            CLIENTE_CEDULA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, cliente_cedula)
+            ],
+            METODO_PAGO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, metodo_pago)
+            ],
+            BANCO_DESTINO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, banco_destino)
+            ],
+            EDITAR_ITEM_DESCRIPCION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, editar_item_descripcion)
             ],
             GENERAR_FACTURA: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, generar_factura)

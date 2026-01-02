@@ -50,6 +50,9 @@ class InvoiceStates(IntEnum):
     BANCO_ORIGEN = 121
     BANCO_DESTINO = 122
 
+    # Estado para edición de descripción de item
+    EDITAR_ITEM_DESCRIPCION = 123
+
 
 # Constantes de límites
 MAX_ITEMS_PER_INVOICE = 6

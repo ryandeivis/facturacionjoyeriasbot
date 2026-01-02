@@ -19,6 +19,10 @@ from src.bot.handlers.shared import (
     limpiar_datos_factura,
     format_currency
 )
+from src.bot.handlers.formatters import (
+    format_items_list,
+    calculate_items_total
+)
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -83,8 +87,8 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # ============================================================================
 
 async def _confirm_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Usuario confirmó los datos, proceder a generar factura o pedir datos faltantes."""
-    from src.bot.handlers.shared import get_generate_keyboard
+    """Usuario confirmó los datos, proceder a pedir datos faltantes o generar factura."""
+    from src.bot.handlers.shared import get_generate_keyboard, get_metodo_pago_keyboard
 
     query = update.callback_query
 
@@ -103,49 +107,86 @@ async def _confirm_yes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         if cliente_detectado.get('email'):
             context.user_data['cliente_email'] = cliente_detectado.get('email')
 
-    # Verificar si tenemos al menos nombre del cliente (dato mínimo requerido)
+    # Verificar datos en orden: nombre → cédula → método de pago
     nombre_cliente = context.user_data.get('cliente_nombre', '')
 
-    if nombre_cliente:
-        # Ya tenemos nombre, ir directo a generar factura
-        items = context.user_data.get('items', [])
-        total = context.user_data.get('total', 0)
-
-        resumen = "📋 RESUMEN DE FACTURA\n"
-        resumen += "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        resumen += f"👤 Cliente: {nombre_cliente}\n"
-        if context.user_data.get('cliente_telefono'):
-            resumen += f"   Tel: {context.user_data.get('cliente_telefono')}\n"
-        if context.user_data.get('cliente_direccion'):
-            resumen += f"   Dir: {context.user_data.get('cliente_direccion')}\n"
-        if context.user_data.get('cliente_ciudad'):
-            resumen += f"   Ciudad: {context.user_data.get('cliente_ciudad')}\n"
-        if context.user_data.get('cliente_email'):
-            resumen += f"   Email: {context.user_data.get('cliente_email')}\n"
-
-        resumen += f"\n📦 Items: {len(items)}\n"
-        resumen += f"💵 Total: {format_currency(total)}\n\n"
-        resumen += "¿Generar factura?"
-
-        await query.edit_message_text(resumen)
-
-        # Enviar nuevo mensaje con teclado
-        if query.message and hasattr(query.message, 'reply_text'):
-            await query.message.reply_text(
-                "Presiona CONFIRMAR para generar:",
-                reply_markup=get_generate_keyboard()
-            )
-
-        return InvoiceStates.GENERAR_FACTURA
-    else:
-        # No tenemos nombre, pedir datos del cliente
+    # 1. Si no hay nombre, pedirlo primero
+    if not nombre_cliente:
         await query.edit_message_text(
             "👤 DATOS DEL CLIENTE\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n\n"
             "Ingresa el nombre del cliente:"
         )
-
         return InvoiceStates.DATOS_CLIENTE
+
+    # 2. Si no hay cédula, pedirla
+    if not context.user_data.get('cliente_cedula'):
+        await query.edit_message_text(
+            "📋 CÉDULA/NIT DEL CLIENTE\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"Cliente: {nombre_cliente}\n\n"
+            "Ingresa la cédula o NIT:\n"
+            "(Escribe 'omitir' si no aplica)"
+        )
+        return InvoiceStates.CLIENTE_CEDULA
+
+    # 3. Si no hay método de pago, pedirlo
+    if not context.user_data.get('metodo_pago'):
+        await query.edit_message_text(
+            "💳 MÉTODO DE PAGO\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"Cliente: {nombre_cliente}\n\n"
+            "¿Cómo pagó el cliente?"
+        )
+        # Enviar teclado en mensaje nuevo
+        if query.message and hasattr(query.message, 'reply_text'):
+            await query.message.reply_text(
+                "Selecciona el método de pago:",
+                reply_markup=get_metodo_pago_keyboard()
+            )
+        return InvoiceStates.METODO_PAGO
+
+    # 4. Todo completo: mostrar resumen y generar
+    items = context.user_data.get('items', [])
+    total = context.user_data.get('total', 0)
+
+    resumen = "📋 RESUMEN DE FACTURA\n"
+    resumen += "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    resumen += f"👤 Cliente: {nombre_cliente}\n"
+    if context.user_data.get('cliente_cedula'):
+        resumen += f"   Cédula: {context.user_data.get('cliente_cedula')}\n"
+    if context.user_data.get('cliente_telefono'):
+        resumen += f"   Tel: {context.user_data.get('cliente_telefono')}\n"
+    if context.user_data.get('cliente_direccion'):
+        resumen += f"   Dir: {context.user_data.get('cliente_direccion')}\n"
+    if context.user_data.get('cliente_ciudad'):
+        resumen += f"   Ciudad: {context.user_data.get('cliente_ciudad')}\n"
+    if context.user_data.get('cliente_email'):
+        resumen += f"   Email: {context.user_data.get('cliente_email')}\n"
+
+    # Método de pago
+    metodo = context.user_data.get('metodo_pago', '')
+    if metodo:
+        pago_icon = {'efectivo': '💵', 'tarjeta': '💳', 'transferencia': '🏦'}.get(metodo, '💰')
+        resumen += f"\n💳 Pago: {pago_icon} {metodo.title()}\n"
+        if metodo == 'transferencia':
+            if context.user_data.get('banco_destino'):
+                resumen += f"   Banco: {context.user_data.get('banco_destino')}\n"
+
+    resumen += f"\n📦 Items: {len(items)}\n"
+    resumen += f"💵 Total: {format_currency(total)}\n\n"
+    resumen += "¿Generar factura?"
+
+    await query.edit_message_text(resumen)
+
+    # Enviar nuevo mensaje con teclado
+    if query.message and hasattr(query.message, 'reply_text'):
+        await query.message.reply_text(
+            "Presiona CONFIRMAR para generar:",
+            reply_markup=get_generate_keyboard()
+        )
+
+    return InvoiceStates.GENERAR_FACTURA
 
 
 async def _confirm_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -183,21 +224,18 @@ async def _show_items_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         )
         return InvoiceStates.EDITAR_SELECCIONAR_ITEM
 
-    # Construir resumen de items
-    items_text = "✏️ EDITAR PRODUCTOS\n━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    total = 0
-    for i, item in enumerate(items, 1):
-        nombre = item.get('nombre', item.get('descripcion', f'Item {i}'))
-        cantidad = item.get('cantidad', 1)
-        precio = item.get('precio', 0)
-        subtotal = cantidad * precio
-        total += subtotal
-        items_text += f"{i}. {nombre}\n"
-        items_text += f"   {cantidad} x {format_currency(precio)} = {format_currency(subtotal)}\n\n"
+    # Usar formatters centralizados
+    total = calculate_items_total(items)
+    items_formatted = format_items_list(items)
 
-    items_text += f"━━━━━━━━━━━━━━━━━━━━━━\n"
-    items_text += f"💵 Total: {format_currency(total)}\n\n"
-    items_text += "Selecciona un producto para editar:"
+    items_text = (
+        "✏️ EDITAR PRODUCTOS\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"{items_formatted}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💵 Total: {format_currency(total)}\n\n"
+        "Selecciona un producto para editar:"
+    )
 
     await query.edit_message_text(
         items_text,
@@ -282,6 +320,15 @@ async def _start_field_edit(
         )
         return InvoiceStates.EDITAR_ITEM_PRECIO
 
+    elif field == 'descripcion':
+        current = item.get('descripcion', '')
+        await query.edit_message_text(
+            f"📝 Descripción actual: {current or '(Sin descripción)'}\n\n"
+            "Escribe la nueva descripción:\n"
+            "(Escribe 'borrar' para eliminarla)"
+        )
+        return InvoiceStates.EDITAR_ITEM_DESCRIPCION
+
     return InvoiceStates.CONFIRMAR_DATOS
 
 
@@ -298,8 +345,8 @@ async def _delete_item(
         deleted = items.pop(item_index)
         context.user_data['items'] = items
 
-        # Recalcular totales
-        total = sum(i.get('precio', 0) * i.get('cantidad', 1) for i in items)
+        # Recalcular totales usando formatter centralizado
+        total = calculate_items_total(items)
         context.user_data['subtotal'] = total
         context.user_data['total'] = total
 
