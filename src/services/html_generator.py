@@ -778,8 +778,8 @@ class HTMLGeneratorService:
 
         return "\n".join(rows)
 
-    def _render_payment_section(self, invoice: InvoiceData) -> str:
-        """Genera la sección de método de pago si está disponible"""
+    def _render_payment_card(self, invoice: InvoiceData) -> str:
+        """Genera card de método de pago para mostrar al lado de totales."""
         if not invoice.metodo_pago:
             return ""
 
@@ -787,25 +787,24 @@ class HTMLGeneratorService:
         metodo_display = invoice.metodo_pago.title()
 
         # Info adicional para transferencias
-        transfer_info = ""
+        transfer_rows = ""
         if invoice.metodo_pago == 'transferencia':
             if invoice.banco_destino:
-                transfer_info += f"<tr><td>Cuenta Destino:</td><td>{invoice.banco_destino}</td></tr>"
+                transfer_rows += f"<tr><td>Cuenta:</td><td>{invoice.banco_destino}</td></tr>"
             if invoice.referencia_pago:
-                transfer_info += f"<tr><td>Referencia:</td><td>{invoice.referencia_pago}</td></tr>"
+                transfer_rows += f"<tr><td>Ref:</td><td>{invoice.referencia_pago}</td></tr>"
 
         return f'''
-            <!-- Método de Pago -->
-            <div class="section-title" style="margin-top: 20px;">MÉTODO DE PAGO</div>
-            <div class="cliente-card" style="padding: 15px;">
-                <table class="cliente-table">
-                    <tr>
-                        <td style="font-weight: bold;">Forma de Pago:</td>
-                        <td>{metodo_display}</td>
-                    </tr>
-                    {transfer_info}
-                </table>
-            </div>
+                <div class="totals-card" style="min-width: 180px;">
+                    <div style="font-weight: bold; margin-bottom: 12px; color: #8B6914; font-size: 13px;">MÉTODO DE PAGO</div>
+                    <table class="totals-table">
+                        <tr>
+                            <td>Forma:</td>
+                            <td>{metodo_display}</td>
+                        </tr>
+                        {transfer_rows}
+                    </table>
+                </div>
         '''
 
     def _render_html(self, invoice: InvoiceData) -> str:
@@ -916,8 +915,8 @@ class HTMLGeneratorService:
                 </table>
             </div>
 
-            <!-- Totales - Card flotante -->
-            <div class="totals-section">
+            <!-- Totales y Método de Pago - Cards lado a lado -->
+            <div class="totals-section" style="gap: 15px;">
                 <div class="totals-card">
                     <table class="totals-table">
                         <tr>
@@ -938,8 +937,8 @@ class HTMLGeneratorService:
                         </tr>
                     </table>
                 </div>
+                {self._render_payment_card(invoice)}
             </div>
-            {self._render_payment_section(invoice)}
         </div>
 
         <!-- Footer - Dark elegant -->

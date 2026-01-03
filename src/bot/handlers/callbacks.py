@@ -23,6 +23,7 @@ from src.bot.handlers.formatters import (
     format_items_list,
     calculate_items_total
 )
+from src.services.client_processor import ClientProcessor
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -260,6 +261,7 @@ async def _show_item_fields(
 
     item = items[item_index]
     nombre = item.get('nombre', item.get('descripcion', 'Sin nombre'))
+    descripcion = item.get('descripcion', '')
     cantidad = item.get('cantidad', 1)
     precio = item.get('precio', 0)
 
@@ -269,6 +271,7 @@ async def _show_item_fields(
         f"✏️ EDITAR PRODUCTO {item_index + 1}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"📦 Nombre: {nombre}\n"
+        f"📝 Descripción: {descripcion or '(Sin descripción)'}\n"
         f"🔢 Cantidad: {cantidad}\n"
         f"💵 Precio: {format_currency(precio)}\n"
         f"💰 Total: {format_currency(cantidad * precio)}\n\n"
@@ -409,11 +412,17 @@ async def _start_cliente_field_edit(
     query = update.callback_query
     cliente = context.user_data.get('cliente_detectado', {})
 
-    current_value = cliente.get(field, 'No detectado')
+    # Para cédula, también verificar en contexto
+    if field == 'cedula':
+        current_value = cliente.get('cedula') or context.user_data.get('cliente_cedula') or 'No detectado'
+    else:
+        current_value = cliente.get(field, 'No detectado')
+
     context.user_data['editing_cliente_field'] = field
 
     prompts = {
         'nombre': f"👤 Nombre actual: {current_value}\n\nEscribe el nuevo nombre:",
+        'cedula': f"🪪 Cédula actual: {current_value}\n\nEscribe la cédula o NIT:",
         'telefono': f"📱 Teléfono actual: {current_value}\n\nEscribe el nuevo teléfono:",
         'direccion': f"📍 Dirección actual: {current_value}\n\nEscribe la nueva dirección:",
         'ciudad': f"🏙️ Ciudad actual: {current_value}\n\nEscribe la nueva ciudad:",
@@ -463,22 +472,14 @@ async def _show_confirm_screen(update: Update, context: ContextTypes.DEFAULT_TYP
         f"💰 Subtotal: {format_currency(total)}\n"
     )
 
-    # Mostrar cliente si existe
-    if cliente and any([cliente.get('nombre'), cliente.get('telefono')]):
-        mensaje += "\n👤 CLIENTE DETECTADO\n"
-        mensaje += "━━━━━━━━━━━━━━━━━━━━\n"
-        if cliente.get('nombre'):
-            mensaje += f"   Nombre: {cliente.get('nombre')}\n"
-        if cliente.get('telefono'):
-            mensaje += f"   Tel: {cliente.get('telefono')}\n"
-        if cliente.get('direccion'):
-            mensaje += f"   Dir: {cliente.get('direccion')}\n"
-        if cliente.get('ciudad'):
-            mensaje += f"   Ciudad: {cliente.get('ciudad')}\n"
-        if cliente.get('email'):
-            mensaje += f"   Email: {cliente.get('email')}\n"
+    # Incluir cédula del contexto si existe
+    if context.user_data.get('cliente_cedula') and not cliente.get('cedula'):
+        cliente['cedula'] = context.user_data.get('cliente_cedula')
 
-    mensaje += "\n¿Qué deseas hacer?"
+    # Mostrar checklist visual del cliente
+    mensaje += "\n" + ClientProcessor.format_checklist(cliente)
+
+    mensaje += "\n\n¿Qué deseas hacer?"
 
     has_cliente = bool(cliente and cliente.get('nombre'))
 

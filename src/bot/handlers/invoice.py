@@ -45,6 +45,7 @@ from src.database.queries.invoice_queries import create_invoice
 from src.services.n8n_service import n8n_service
 from src.services.text_parser import text_parser
 from src.services.html_generator import html_generator
+from src.services.client_processor import ClientProcessor
 from src.bot.handlers.shared import (
     AuthStates,
     InvoiceStates,
@@ -300,9 +301,22 @@ def _formatear_respuesta_items(response, context: ContextTypes.DEFAULT_TYPE) -> 
     context.user_data['items'] = formatted_items
     context.user_data['transcripcion'] = response.transcripcion
 
-    # Guardar cliente detectado si existe
+    # Procesar cliente con ClientProcessor (extrae cédula para VOZ/FOTO)
+    input_type = response.input_type or context.user_data.get('input_type', 'TEXTO')
+    processed_cliente = ClientProcessor.process_extracted_client(
+        formatted_cliente or {},
+        input_type.upper()
+    )
+
+    # Guardar cliente procesado
     if formatted_cliente:
+        # Combinar cliente formateado con datos procesados
+        formatted_cliente['cedula'] = processed_cliente.get('cedula')
         context.user_data['cliente_detectado'] = formatted_cliente
+
+        # Si se extrajo cédula automáticamente, guardarla
+        if processed_cliente.get('cedula_detected'):
+            context.user_data['cliente_cedula'] = processed_cliente['cedula']
 
     # Calcular total usando format_items_list
     total = sum(
@@ -322,27 +336,14 @@ def _formatear_respuesta_items(response, context: ContextTypes.DEFAULT_TYPE) -> 
         f"💰 Subtotal: {format_currency(total)}\n"
     )
 
-    # Mostrar cliente detectado si existe
-    if response.cliente:
-        cliente = response.cliente
-        has_cliente_data = any([
-            cliente.get('nombre'),
-            cliente.get('telefono'),
-            cliente.get('direccion')
-        ])
-        if has_cliente_data:
-            mensaje += "\n👤 CLIENTE DETECTADO\n"
-            mensaje += "━━━━━━━━━━━━━━━━━━━━\n"
-            if cliente.get('nombre'):
-                mensaje += f"   Nombre: {cliente.get('nombre')}\n"
-            if cliente.get('telefono'):
-                mensaje += f"   Tel: {cliente.get('telefono')}\n"
-            if cliente.get('direccion'):
-                mensaje += f"   Dir: {cliente.get('direccion')}\n"
-            if cliente.get('ciudad'):
-                mensaje += f"   Ciudad: {cliente.get('ciudad')}\n"
-            if cliente.get('email'):
-                mensaje += f"   Email: {cliente.get('email')}\n"
+    # Mostrar cliente con checklist visual
+    # Usar cliente_detectado que incluye la cédula procesada
+    cliente_para_checklist = context.user_data.get('cliente_detectado', {})
+    if not cliente_para_checklist and response.cliente:
+        cliente_para_checklist = response.cliente
+
+    # Siempre mostrar checklist (muestra campos faltantes)
+    mensaje += "\n" + ClientProcessor.format_checklist(cliente_para_checklist)
 
     if response.transcripcion:
         mensaje += f"\n🎤 Transcripción: {response.transcripcion[:100]}...\n"
@@ -937,6 +938,10 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 })
 
             # Preparar datos de factura
+            # Determinar estado: PAGADA si hay método de pago, PENDIENTE si no
+            metodo_pago = context.user_data.get('metodo_pago')
+            estado_factura = InvoiceStatus.PAGADA.value if metodo_pago else InvoiceStatus.PENDIENTE.value
+
             invoice_data = {
                 "organization_id": org_id,
                 "cliente_nombre": context.user_data.get('cliente_nombre'),
@@ -949,7 +954,7 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "subtotal": subtotal,
                 "impuesto": impuesto,
                 "total": total,
-                "estado": InvoiceStatus.PENDIENTE.value,
+                "estado": estado_factura,
                 "vendedor_id": context.user_data.get('user_id'),
                 "input_type": context.user_data.get('input_type'),
                 "input_raw": context.user_data.get('input_raw'),
@@ -1509,6 +1514,10 @@ async def editar_cliente_campo(update: Update, context: ContextTypes.DEFAULT_TYP
         cliente[field] = nuevo_valor
         context.user_data['cliente_detectado'] = cliente
 
+        # Si es cédula, también guardar en cliente_cedula para validación
+        if field == 'cedula':
+            context.user_data['cliente_cedula'] = nuevo_valor
+
     # Volver a pantalla de confirmación
     items = context.user_data.get('items', [])
     total = context.user_data.get('total', 0)
@@ -1530,21 +1539,14 @@ async def editar_cliente_campo(update: Update, context: ContextTypes.DEFAULT_TYP
         f"💰 Subtotal: {format_currency(total)}\n"
     )
 
-    if cliente and any([cliente.get('nombre'), cliente.get('telefono')]):
-        mensaje += "\n👤 CLIENTE DETECTADO\n"
-        mensaje += "━━━━━━━━━━━━━━━━━━━━\n"
-        if cliente.get('nombre'):
-            mensaje += f"   Nombre: {cliente.get('nombre')}\n"
-        if cliente.get('telefono'):
-            mensaje += f"   Tel: {cliente.get('telefono')}\n"
-        if cliente.get('direccion'):
-            mensaje += f"   Dir: {cliente.get('direccion')}\n"
-        if cliente.get('ciudad'):
-            mensaje += f"   Ciudad: {cliente.get('ciudad')}\n"
-        if cliente.get('email'):
-            mensaje += f"   Email: {cliente.get('email')}\n"
+    # Incluir cédula del contexto si existe
+    if context.user_data.get('cliente_cedula') and not cliente.get('cedula'):
+        cliente['cedula'] = context.user_data.get('cliente_cedula')
 
-    mensaje += "\n¿Qué deseas hacer?"
+    # Mostrar checklist visual del cliente
+    mensaje += "\n" + ClientProcessor.format_checklist(cliente)
+
+    mensaje += "\n\n¿Qué deseas hacer?"
 
     has_cliente = bool(cliente and cliente.get('nombre'))
 

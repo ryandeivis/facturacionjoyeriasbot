@@ -170,6 +170,7 @@ def get_cliente_edit_keyboard() -> InlineKeyboardMarkup:
     """
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("👤 Nombre", callback_data="edit_cliente_nombre")],
+        [InlineKeyboardButton("🪪 Cédula", callback_data="edit_cliente_cedula")],
         [InlineKeyboardButton("📱 Teléfono", callback_data="edit_cliente_telefono")],
         [InlineKeyboardButton("📍 Dirección", callback_data="edit_cliente_direccion")],
         [InlineKeyboardButton("🏙️ Ciudad", callback_data="edit_cliente_ciudad")],
