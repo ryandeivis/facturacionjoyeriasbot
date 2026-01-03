@@ -24,6 +24,8 @@ from src.bot.handlers.formatters import (
     calculate_items_total
 )
 from src.services.client_processor import ClientProcessor
+from src.database.connection import get_db_context
+from src.database.queries.customer_queries import check_customer_exists
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -480,8 +482,18 @@ async def _show_confirm_screen(update: Update, context: ContextTypes.DEFAULT_TYP
     if context.user_data.get('cliente_cedula') and not cliente.get('cedula'):
         cliente['cedula'] = context.user_data.get('cliente_cedula')
 
-    # Mostrar checklist visual del cliente
-    mensaje += "\n" + ClientProcessor.format_checklist(cliente)
+    # Verificar si el cliente ya existe en BD
+    is_returning = False
+    org_id = context.user_data.get('organization_id')
+    cedula = cliente.get('cedula')
+    telefono = cliente.get('telefono')
+
+    if org_id and (cedula or telefono):
+        with get_db_context() as db:
+            is_returning = check_customer_exists(db, str(org_id), cedula, telefono)
+
+    # Mostrar checklist visual con título dinámico
+    mensaje += "\n" + ClientProcessor.format_checklist(cliente, is_returning)
 
     mensaje += "\n\n¿Qué deseas hacer?"
 

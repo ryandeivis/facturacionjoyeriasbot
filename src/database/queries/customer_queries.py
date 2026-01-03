@@ -21,6 +21,45 @@ logger = get_logger(__name__)
 # QUERIES SINCRÓNICAS (compatibilidad)
 # ============================================================================
 
+def check_customer_exists(
+    db: Session,
+    org_id: str,
+    cedula: Optional[str] = None,
+    telefono: Optional[str] = None
+) -> bool:
+    """
+    Verifica si un cliente ya existe en la BD (por cédula o teléfono).
+
+    Args:
+        db: Sesión de base de datos
+        org_id: ID de organización
+        cedula: Cédula del cliente (opcional)
+        telefono: Teléfono del cliente (opcional)
+
+    Returns:
+        True si el cliente existe, False si es nuevo
+    """
+    if cedula:
+        existing = db.query(Customer).filter(
+            Customer.organization_id == org_id,
+            Customer.cedula == cedula,
+            Customer.is_deleted == False
+        ).first()
+        if existing:
+            return True
+
+    if telefono:
+        existing = db.query(Customer).filter(
+            Customer.organization_id == org_id,
+            Customer.telefono == telefono,
+            Customer.is_deleted == False
+        ).first()
+        if existing:
+            return True
+
+    return False
+
+
 def get_customer_by_cedula(
     db: Session,
     cedula: str,

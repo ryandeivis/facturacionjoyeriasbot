@@ -42,6 +42,7 @@ from src.utils.errors import (
 )
 from src.database.connection import get_db, get_db_context
 from src.database.queries.invoice_queries import create_invoice
+from src.database.queries.customer_queries import check_customer_exists
 from src.services.n8n_service import n8n_service
 from src.services.text_parser import text_parser
 from src.services.html_generator import html_generator
@@ -348,8 +349,18 @@ def _formatear_respuesta_items(response, context: ContextTypes.DEFAULT_TYPE) -> 
     if not cliente_para_checklist and response.cliente:
         cliente_para_checklist = response.cliente
 
-    # Siempre mostrar checklist (muestra campos faltantes)
-    mensaje += "\n" + ClientProcessor.format_checklist(cliente_para_checklist)
+    # Verificar si el cliente ya existe en BD
+    is_returning = False
+    org_id = context.user_data.get('organization_id')
+    cedula = cliente_para_checklist.get('cedula') or context.user_data.get('cliente_cedula')
+    telefono = cliente_para_checklist.get('telefono') or context.user_data.get('cliente_telefono')
+
+    if org_id and (cedula or telefono):
+        with get_db_context() as db:
+            is_returning = check_customer_exists(db, str(org_id), cedula, telefono)
+
+    # Mostrar checklist con título dinámico
+    mensaje += "\n" + ClientProcessor.format_checklist(cliente_para_checklist, is_returning)
 
     if response.transcripcion:
         mensaje += f"\n🎤 Transcripción: {response.transcripcion[:100]}...\n"
@@ -1698,8 +1709,18 @@ async def editar_cliente_campo(update: Update, context: ContextTypes.DEFAULT_TYP
     if context.user_data.get('cliente_cedula') and not cliente.get('cedula'):
         cliente['cedula'] = context.user_data.get('cliente_cedula')
 
-    # Mostrar checklist visual del cliente
-    mensaje += "\n" + ClientProcessor.format_checklist(cliente)
+    # Verificar si el cliente ya existe en BD
+    is_returning = False
+    org_id = context.user_data.get('organization_id')
+    cedula = cliente.get('cedula')
+    telefono = cliente.get('telefono')
+
+    if org_id and (cedula or telefono):
+        with get_db_context() as db:
+            is_returning = check_customer_exists(db, str(org_id), cedula, telefono)
+
+    # Mostrar checklist visual con título dinámico
+    mensaje += "\n" + ClientProcessor.format_checklist(cliente, is_returning)
 
     mensaje += "\n\n¿Qué deseas hacer?"
 

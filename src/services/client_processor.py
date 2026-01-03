@@ -89,7 +89,7 @@ class ClientProcessor:
         return None
 
     @staticmethod
-    def format_checklist(cliente: Dict[str, Any]) -> str:
+    def format_checklist(cliente: Dict[str, Any], is_returning: bool = False) -> str:
         """
         Formatea checklist visual de datos del cliente.
 
@@ -100,11 +100,16 @@ class ClientProcessor:
 
         Args:
             cliente: Diccionario con datos del cliente
+            is_returning: True si es cliente recurrente (ya existe en BD)
 
         Returns:
             String formateado con checklist visual
         """
-        lines = ["👤 CLIENTE DETECTADO:", "━━━━━━━━━━━━━━━━━━━━━━━━"]
+        if is_returning:
+            title = "🔄 CLIENTE RECURRENTE:"
+        else:
+            title = "🆕 CLIENTE NUEVO:"
+        lines = [title, "━━━━━━━━━━━━━━━━━━━━━━━━"]
 
         # Campos obligatorios (✅ si existe, ❌ si falta)
         required_config = [
