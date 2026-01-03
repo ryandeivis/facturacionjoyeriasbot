@@ -142,3 +142,14 @@ mypy>=1.7.0,<2.0.0
 # Descomenta si generas PDFs:
 # weasyprint>=60.0,<62.0
 # jinja2>=3.1.0,<4.0.0
+
+
+# ==============================================================================
+# DASHBOARD - Streamlit para Estadísticas en Tiempo Real
+# ==============================================================================
+# streamlit - Framework para dashboards interactivos
+# plotly - Gráficos interactivos de alta calidad
+# pandas - Manipulación de datos (requerido por streamlit)
+streamlit>=1.29.0,<2.0.0
+plotly>=5.18.0,<6.0.0
+pandas>=2.0.0,<3.0.0
