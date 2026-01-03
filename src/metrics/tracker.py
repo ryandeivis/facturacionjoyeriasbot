@@ -253,6 +253,18 @@ class MetricsTracker:
             user_id=user_id,
         )
 
+    async def track_user_logout(
+        self,
+        organization_id: str,
+        user_id: int,
+    ):
+        """Trackea logout de usuario."""
+        await self._collector.collect(
+            event_type=EventType.USER_LOGOUT,
+            organization_id=organization_id,
+            user_id=user_id,
+        )
+
     # =========================================================================
     # ORGANIZACIONES
     # =========================================================================

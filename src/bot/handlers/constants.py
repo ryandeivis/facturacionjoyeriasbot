@@ -53,6 +53,11 @@ class InvoiceStates(IntEnum):
     # Estado para edición de descripción de item
     EDITAR_ITEM_DESCRIPCION = 123
 
+    # Estados para IVA y Descuento
+    APLICAR_IVA = 124
+    APLICAR_DESCUENTO = 125
+    MONTO_DESCUENTO = 126
+
 
 # Constantes de límites
 MAX_ITEMS_PER_INVOICE = 6
@@ -65,7 +70,8 @@ INVOICE_CONTEXT_KEYS = [
     'subtotal', 'total', 'input_type', 'input_raw', 'transcripcion',
     'manual_mode', 'n8n_response', 'cliente_detectado',
     'editing_item_index', 'editing_field', 'new_item',
-    'metodo_pago', 'banco_origen', 'banco_destino', 'referencia_pago'
+    'metodo_pago', 'banco_origen', 'banco_destino', 'referencia_pago',
+    'aplicar_iva', 'aplicar_descuento', 'descuento_monto'
 ]
 
 # Métodos de pago válidos

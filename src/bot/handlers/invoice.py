@@ -56,6 +56,8 @@ from src.bot.handlers.shared import (
     get_generate_keyboard,
     get_metodo_pago_keyboard,
     get_bancos_keyboard,
+    get_aplicar_iva_keyboard,
+    get_aplicar_descuento_keyboard,
     limpiar_datos_factura,
     is_authenticated,
     format_currency,
@@ -107,6 +109,10 @@ BANCO_ORIGEN = InvoiceStates.BANCO_ORIGEN
 BANCO_DESTINO = InvoiceStates.BANCO_DESTINO
 # Estado de edición de descripción
 EDITAR_ITEM_DESCRIPCION = InvoiceStates.EDITAR_ITEM_DESCRIPCION
+# Estados de IVA y Descuento
+APLICAR_IVA = InvoiceStates.APLICAR_IVA
+APLICAR_DESCUENTO = InvoiceStates.APLICAR_DESCUENTO
+MONTO_DESCUENTO = InvoiceStates.MONTO_DESCUENTO
 
 
 # ============================================================================
@@ -778,19 +784,16 @@ async def metodo_pago(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     texto = update.message.text.strip().lower()
 
     if 'omitir' in texto:
-        # Continuar sin método de pago
-        await _mostrar_resumen_factura(update, context)
-        return GENERAR_FACTURA
+        # Continuar sin método de pago → preguntar IVA
+        return await _preguntar_iva(update, context)
 
     if 'efectivo' in texto:
         context.user_data['metodo_pago'] = 'efectivo'
-        await _mostrar_resumen_factura(update, context)
-        return GENERAR_FACTURA
+        return await _preguntar_iva(update, context)
 
     elif 'tarjeta' in texto:
         context.user_data['metodo_pago'] = 'tarjeta'
-        await _mostrar_resumen_factura(update, context)
-        return GENERAR_FACTURA
+        return await _preguntar_iva(update, context)
 
     elif 'transferencia' in texto:
         context.user_data['metodo_pago'] = 'transferencia'
@@ -811,13 +814,23 @@ async def metodo_pago(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return METODO_PAGO
 
 
+async def _preguntar_iva(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Helper para preguntar si aplicar IVA"""
+    await update.message.reply_text(
+        "📊 IMPUESTO IVA\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "¿Aplicar IVA (19%) a esta factura?",
+        reply_markup=get_aplicar_iva_keyboard()
+    )
+    return APLICAR_IVA
+
+
 async def banco_origen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Recibe el banco de origen para transferencias"""
     texto = update.message.text.strip()
 
     if 'omitir' in texto.lower():
-        await _mostrar_resumen_factura(update, context)
-        return GENERAR_FACTURA
+        return await _preguntar_iva(update, context)
 
     context.user_data['banco_origen'] = texto
 
@@ -831,22 +844,135 @@ async def banco_origen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 
 async def banco_destino(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Recibe el banco destino y muestra resumen"""
+    """Recibe el banco destino y pasa a preguntar IVA"""
     texto = update.message.text.strip()
 
     if 'omitir' not in texto.lower():
         context.user_data['banco_destino'] = texto
 
-    # Mostrar resumen con todos los datos
-    await _mostrar_resumen_factura(update, context)
-    return GENERAR_FACTURA
+    # Preguntar IVA después de datos bancarios
+    return await _preguntar_iva(update, context)
+
+
+# ============================================================================
+# HANDLERS DE IVA Y DESCUENTO
+# ============================================================================
+
+async def aplicar_iva(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe respuesta sobre aplicar IVA"""
+    texto = update.message.text.strip().lower()
+
+    if 'sí' in texto or 'si' in texto or '19' in texto:
+        context.user_data['aplicar_iva'] = True
+        logger.info("IVA aplicado: 19%")
+    else:
+        context.user_data['aplicar_iva'] = False
+        logger.info("IVA NO aplicado")
+
+    # Preguntar descuento
+    await update.message.reply_text(
+        "💰 DESCUENTO\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "¿Aplicar algún descuento?",
+        reply_markup=get_aplicar_descuento_keyboard()
+    )
+    return APLICAR_DESCUENTO
+
+
+async def aplicar_descuento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe respuesta sobre aplicar descuento"""
+    texto = update.message.text.strip().lower()
+
+    if 'sí' in texto or 'si' in texto:
+        context.user_data['aplicar_descuento'] = True
+        await update.message.reply_text(
+            "💵 MONTO DE DESCUENTO\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Ingresa el monto del descuento:\n"
+            "• Número para valor fijo (ej: 50000)\n"
+            "• Porcentaje con % (ej: 10%)",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return MONTO_DESCUENTO
+    else:
+        context.user_data['aplicar_descuento'] = False
+        context.user_data['descuento_monto'] = 0
+        logger.info("Descuento NO aplicado")
+
+        # Mostrar resumen y generar
+        await _mostrar_resumen_factura(update, context)
+        return GENERAR_FACTURA
+
+
+async def monto_descuento(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Recibe el monto del descuento"""
+    texto = update.message.text.strip()
+
+    try:
+        subtotal = context.user_data.get('subtotal', 0)
+
+        if '%' in texto:
+            # Porcentaje
+            porcentaje = float(texto.replace('%', '').replace(',', '.').strip())
+            if porcentaje < 0 or porcentaje > 100:
+                await update.message.reply_text(
+                    "❌ El porcentaje debe estar entre 0 y 100.\n\n"
+                    "Ingresa un valor válido:"
+                )
+                return MONTO_DESCUENTO
+
+            descuento = round(subtotal * (porcentaje / 100))
+            logger.info(f"Descuento aplicado: {porcentaje}% = {format_currency(descuento)}")
+        else:
+            # Valor fijo
+            descuento = int(texto.replace('.', '').replace(',', '').replace('$', '').strip())
+            if descuento < 0:
+                await update.message.reply_text(
+                    "❌ El descuento no puede ser negativo.\n\n"
+                    "Ingresa un valor válido:"
+                )
+                return MONTO_DESCUENTO
+            if descuento > subtotal:
+                await update.message.reply_text(
+                    f"❌ El descuento no puede ser mayor al subtotal ({format_currency(subtotal)}).\n\n"
+                    "Ingresa un valor válido:"
+                )
+                return MONTO_DESCUENTO
+            logger.info(f"Descuento aplicado: {format_currency(descuento)}")
+
+        context.user_data['descuento_monto'] = descuento
+
+        # Mostrar resumen y generar
+        await _mostrar_resumen_factura(update, context)
+        return GENERAR_FACTURA
+
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Formato inválido.\n\n"
+            "Ingresa un número válido:\n"
+            "• Valor fijo: 50000\n"
+            "• Porcentaje: 10%"
+        )
+        return MONTO_DESCUENTO
 
 
 async def _mostrar_resumen_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Muestra el resumen de la factura antes de confirmar"""
     items = context.user_data.get('items', [])
     subtotal = context.user_data.get('subtotal', 0)
-    total = context.user_data.get('total', 0)
+
+    # Obtener valores de IVA y descuento del flujo
+    descuento = context.user_data.get('descuento_monto', 0)
+    base_gravable = subtotal - descuento
+
+    if context.user_data.get('aplicar_iva', True):
+        impuesto = round(base_gravable * settings.TAX_RATE)
+        iva_text = f"📊 IVA (19%): {format_currency(impuesto)}\n"
+    else:
+        impuesto = 0
+        iva_text = "📊 IVA: No aplica\n"
+
+    total = base_gravable + impuesto
 
     # Usar formatters centralizados
     items_text = format_items_list(items)
@@ -867,13 +993,16 @@ async def _mostrar_resumen_factura(update: Update, context: ContextTypes.DEFAULT
     if pago_text:
         mensaje += f"\n💳 MÉTODO DE PAGO\n   {pago_text}\n"
 
-    mensaje += (
-        f"\n📦 PRODUCTOS\n{items_text}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 Subtotal: {format_currency(subtotal)}\n"
-        f"💵 TOTAL: {format_currency(total)}\n\n"
-        "¿Confirmar y generar factura?"
-    )
+    mensaje += f"\n📦 PRODUCTOS\n{items_text}\n"
+    mensaje += f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    mensaje += f"💰 Subtotal: {format_currency(subtotal)}\n"
+
+    if descuento > 0:
+        mensaje += f"🏷️ Descuento: -{format_currency(descuento)}\n"
+
+    mensaje += iva_text
+    mensaje += f"💵 TOTAL: {format_currency(total)}\n\n"
+    mensaje += "¿Confirmar y generar factura?"
 
     await update.message.reply_text(
         mensaje,
@@ -918,10 +1047,18 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         try:
             org_id = context.user_data.get('organization_id')
 
-            # Calcular impuesto usando tasa configurada
+            # Calcular totales usando valores de IVA y descuento del flujo
             subtotal = context.user_data.get('subtotal', 0)
-            impuesto = round(subtotal * settings.TAX_RATE)
-            total = subtotal + impuesto
+            descuento = context.user_data.get('descuento_monto', 0)
+            base_gravable = subtotal - descuento
+
+            # IVA: aplicar solo si el usuario lo seleccionó
+            if context.user_data.get('aplicar_iva', True):  # Por defecto aplica IVA
+                impuesto = round(base_gravable * settings.TAX_RATE)
+            else:
+                impuesto = 0
+
+            total = base_gravable + impuesto
 
             # Normalizar items antes de guardar (BUG-001 fix)
             items_raw = context.user_data.get('items', [])
@@ -952,6 +1089,7 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                 "cliente_cedula": context.user_data.get('cliente_cedula'),
                 "items": items_normalized,
                 "subtotal": subtotal,
+                "descuento": descuento,
                 "impuesto": impuesto,
                 "total": total,
                 "estado": estado_factura,
@@ -970,9 +1108,12 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             # IMPORTANTE: Extraer TODOS los datos dentro del context manager
             # para evitar DetachedInstanceError al acceder después de cerrar sesión
             invoice_extracted = None
+            is_new_customer = False
             with get_db_context() as db:
                 invoice = create_invoice(db, invoice_data)
                 if invoice:
+                    # Extraer flag de cliente nuevo/recurrente (para métricas)
+                    is_new_customer = getattr(invoice, '_is_new_customer', False)
                     # Extraer datos mientras la sesión está activa
                     invoice_extracted = {
                         'id': invoice.id,
@@ -1000,6 +1141,7 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         'total': float(invoice.total),
                         'metodo_pago': invoice.metodo_pago,
                         'banco_destino': invoice.banco_destino,
+                        'is_new_customer': is_new_customer,
                     }
 
             if invoice_extracted:
@@ -1027,6 +1169,19 @@ async def generar_factura(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
                         "input_type": context.user_data.get('input_type'),
                     }
                 )
+
+                # Métricas de negocio: cliente nuevo o recurrente
+                if invoice_extracted.get('cliente_nombre'):
+                    if invoice_extracted.get('is_new_customer'):
+                        await metrics.track_customer_new(
+                            organization_id=invoice_extracted['organization_id'],
+                            user_id=user_id,
+                        )
+                    else:
+                        await metrics.track_customer_returning(
+                            organization_id=invoice_extracted['organization_id'],
+                            user_id=user_id,
+                        )
 
                 # Actualizar mensaje
                 await processing_msg.edit_text(
@@ -1809,6 +1964,15 @@ def get_invoice_conversation_handler() -> ConversationHandler:
             ],
             BANCO_DESTINO: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, banco_destino)
+            ],
+            APLICAR_IVA: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, aplicar_iva)
+            ],
+            APLICAR_DESCUENTO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, aplicar_descuento)
+            ],
+            MONTO_DESCUENTO: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, monto_descuento)
             ],
             EDITAR_ITEM_DESCRIPCION: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, editar_item_descripcion)

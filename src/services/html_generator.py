@@ -915,8 +915,9 @@ class HTMLGeneratorService:
                 </table>
             </div>
 
-            <!-- Totales y Método de Pago - Cards lado a lado -->
+            <!-- Método de Pago y Totales - Cards lado a lado -->
             <div class="totals-section" style="gap: 15px;">
+                {self._render_payment_card(invoice)}
                 <div class="totals-card">
                     <table class="totals-table">
                         <tr>
@@ -937,7 +938,6 @@ class HTMLGeneratorService:
                         </tr>
                     </table>
                 </div>
-                {self._render_payment_card(invoice)}
             </div>
         </div>
 

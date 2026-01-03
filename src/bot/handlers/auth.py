@@ -38,8 +38,12 @@ from src.bot.handlers.shared import (
     MENSAJES
 )
 from config.constants import UserRole
+from src.metrics.tracker import get_metrics_tracker
 
 logger = get_logger(__name__)
+
+# Obtener tracker de métricas
+metrics = get_metrics_tracker()
 
 # Estados de la conversación (aliases para compatibilidad)
 CEDULA = AuthStates.CEDULA
@@ -226,6 +230,12 @@ async def recibir_password(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     # Audit: login exitoso
     audit_logger.login(user_id=str(user_id), org_id=str(org_id), success=True)
 
+    # Métrica: login exitoso
+    await metrics.track_user_login(
+        organization_id=str(org_id),
+        user_id=update.effective_user.id
+    )
+
     logger.info(f"Login exitoso: cedula={cedula[:3]}***")
 
     context.user_data['autenticado'] = True
@@ -283,6 +293,14 @@ async def menu_principal(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return MENU_PRINCIPAL
 
     elif 'Cerrar' in opcion or 'Sesión' in opcion:
+        # Métrica: logout
+        org_id = context.user_data.get('organization_id')
+        if org_id:
+            await metrics.track_user_logout(
+                organization_id=str(org_id),
+                user_id=update.effective_user.id
+            )
+
         await update.message.reply_text(
             MENSAJES['sesion_cerrada'],
             reply_markup=ReplyKeyboardRemove()
@@ -431,28 +449,36 @@ def get_auth_conversation_handler() -> ConversationHandler:
                 CallbackQueryHandler(handle_callback)
             ],
             EDITAR_ITEM_NOMBRE: [
+                CallbackQueryHandler(handle_callback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, editar_item_nombre)
             ],
             EDITAR_ITEM_CANTIDAD: [
+                CallbackQueryHandler(handle_callback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, editar_item_cantidad)
             ],
             EDITAR_ITEM_PRECIO: [
+                CallbackQueryHandler(handle_callback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, editar_item_precio)
             ],
             EDITAR_ITEM_DESCRIPCION: [
+                CallbackQueryHandler(handle_callback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, editar_item_descripcion)
             ],
             AGREGAR_ITEM: [
+                CallbackQueryHandler(handle_callback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_item_nombre)
             ],
             AGREGAR_ITEM_CANTIDAD: [
+                CallbackQueryHandler(handle_callback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_item_cantidad)
             ],
             AGREGAR_ITEM_PRECIO: [
+                CallbackQueryHandler(handle_callback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_item_precio)
             ],
             # Estado para edición de campos del cliente
             EDITAR_CLIENTE_CAMPO: [
+                CallbackQueryHandler(handle_callback),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, editar_cliente_campo)
             ],
             # Estados de método de pago

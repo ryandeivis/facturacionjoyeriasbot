@@ -39,6 +39,8 @@ from .keyboards import (
     get_cliente_edit_keyboard,
     get_metodo_pago_keyboard,
     get_bancos_keyboard,
+    get_aplicar_iva_keyboard,
+    get_aplicar_descuento_keyboard,
 )
 
 # Reexports de messages.py

@@ -212,3 +212,33 @@ def get_bancos_keyboard() -> ReplyKeyboardMarkup:
         keyboard.append(row)
     keyboard.append(['⏭️ Omitir'])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+# ============================================================================
+# TECLADOS DE IVA Y DESCUENTO
+# ============================================================================
+
+def get_aplicar_iva_keyboard() -> ReplyKeyboardMarkup:
+    """
+    Teclado para preguntar si aplicar IVA.
+
+    Returns:
+        ReplyKeyboardMarkup con opciones Sí/No
+    """
+    return ReplyKeyboardMarkup([
+        ['✅ Sí, aplicar IVA (19%)'],
+        ['❌ No, sin IVA']
+    ], resize_keyboard=True)
+
+
+def get_aplicar_descuento_keyboard() -> ReplyKeyboardMarkup:
+    """
+    Teclado para preguntar si aplicar descuento.
+
+    Returns:
+        ReplyKeyboardMarkup con opciones Sí/No
+    """
+    return ReplyKeyboardMarkup([
+        ['✅ Sí, aplicar descuento'],
+        ['❌ No, sin descuento']
+    ], resize_keyboard=True)

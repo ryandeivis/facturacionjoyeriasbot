@@ -120,6 +120,66 @@ def create_customer(db: Session, customer_data: dict) -> Optional[Customer]:
         return None
 
 
+def find_or_create_customer(
+    db: Session,
+    org_id: str,
+    customer_data: dict
+) -> Tuple[Optional[Customer], bool]:
+    """
+    Busca un cliente existente o crea uno nuevo (sync).
+
+    Busca por cédula primero, luego por teléfono si no tiene cédula.
+    Si no encuentra, crea un nuevo cliente.
+
+    Args:
+        db: Sesión de base de datos
+        org_id: ID de organización
+        customer_data: Datos del cliente (nombre, cedula, telefono, etc.)
+
+    Returns:
+        Tupla (cliente, is_new): cliente encontrado/creado y flag si es nuevo
+    """
+    cedula = customer_data.get('cedula')
+    telefono = customer_data.get('telefono')
+
+    # Buscar por cédula si existe
+    if cedula:
+        existing = db.query(Customer).filter(
+            Customer.organization_id == org_id,
+            Customer.cedula == cedula,
+            Customer.is_deleted == False
+        ).first()
+        if existing:
+            logger.info(f"Cliente recurrente encontrado por cédula: {cedula}")
+            return existing, False
+
+    # Buscar por teléfono si existe
+    if telefono:
+        existing = db.query(Customer).filter(
+            Customer.organization_id == org_id,
+            Customer.telefono == telefono,
+            Customer.is_deleted == False
+        ).first()
+        if existing:
+            logger.info(f"Cliente recurrente encontrado por teléfono: {telefono}")
+            return existing, False
+
+    # Crear nuevo cliente
+    try:
+        customer_data_copy = customer_data.copy()
+        customer_data_copy['organization_id'] = org_id
+
+        customer = Customer(**customer_data_copy)
+        db.add(customer)
+        db.flush()
+
+        logger.info(f"Cliente nuevo creado: {customer.nombre}")
+        return customer, True
+    except Exception as e:
+        logger.error(f"Error creando cliente: {e}")
+        return None, False
+
+
 def search_customers(
     db: Session,
     org_id: str,

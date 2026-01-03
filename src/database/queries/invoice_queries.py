@@ -13,7 +13,10 @@ from typing import Optional, List
 from datetime import datetime
 
 from src.database.models import Invoice, InvoiceItem, Customer, TenantConfig
-from src.database.queries.customer_queries import find_or_create_customer_async
+from src.database.queries.customer_queries import (
+    find_or_create_customer_async,
+    find_or_create_customer,
+)
 from src.utils.logger import get_logger
 from config.settings import settings
 
@@ -68,9 +71,47 @@ def generate_invoice_number(db: Session, org_id: Optional[str] = None) -> str:
     return f"{prefix_pattern}{new_num:04d}"
 
 
+def create_invoice_items_batch(
+    db: Session,
+    invoice_id: str,
+    items: list
+) -> None:
+    """
+    Crea items normalizados para una factura (sync).
+
+    Args:
+        db: Sesión de base de datos
+        invoice_id: ID de la factura
+        items: Lista de diccionarios con datos de cada item
+    """
+    for idx, item in enumerate(items, 1):
+        cantidad = item.get('cantidad', 1)
+        precio = item.get('precio', item.get('precio_unitario', 0))
+
+        invoice_item = InvoiceItem(
+            invoice_id=invoice_id,
+            numero=idx,
+            descripcion=item.get('nombre', item.get('descripcion', 'Item')),
+            cantidad=cantidad,
+            precio_unitario=precio,
+            subtotal=cantidad * precio,
+            material=item.get('material'),
+            peso_gramos=item.get('peso_gramos'),
+            tipo_prenda=item.get('tipo_prenda'),
+        )
+        db.add(invoice_item)
+
+    db.flush()
+    logger.info(f"Creados {len(items)} items para factura {invoice_id}")
+
+
 def create_invoice(db: Session, invoice_data: dict) -> Optional[Invoice]:
     """
-    Crea una nueva factura en la base de datos.
+    Crea una nueva factura en la base de datos con datos normalizados.
+
+    Además de crear la factura, también:
+    1. Crea o reutiliza el cliente en la tabla `customers`
+    2. Crea los items normalizados en `invoice_items`
 
     Args:
         db: Sesión de base de datos
@@ -86,8 +127,36 @@ def create_invoice(db: Session, invoice_data: dict) -> Optional[Invoice]:
         if "numero_factura" not in invoice_data:
             invoice_data["numero_factura"] = generate_invoice_number(db, org_id)
 
+        # Extraer items antes de crear factura (para normalización)
+        items_list = invoice_data.get("items", [])
+
         invoice = Invoice(**invoice_data)
         db.add(invoice)
+        db.flush()  # Para obtener invoice.id
+
+        # Normalizar: Crear customer si hay datos de cliente
+        is_new_customer = False
+        if org_id:
+            customer_data = {
+                'nombre': invoice_data.get('cliente_nombre'),
+                'cedula': invoice_data.get('cliente_cedula'),
+                'telefono': invoice_data.get('cliente_telefono'),
+                'email': invoice_data.get('cliente_email'),
+                'direccion': invoice_data.get('cliente_direccion'),
+                'ciudad': invoice_data.get('cliente_ciudad'),
+            }
+            # Solo crear customer si tiene al menos nombre
+            if customer_data.get('nombre'):
+                customer, is_new_customer = find_or_create_customer(db, org_id, customer_data)
+                if customer:
+                    invoice.customer_id = customer.id
+                    # Guardar flag para métricas (se usará en el caller)
+                    invoice._is_new_customer = is_new_customer
+
+        # Normalizar: Crear invoice_items
+        if items_list and org_id:
+            create_invoice_items_batch(db, invoice.id, items_list)
+
         db.commit()
         db.refresh(invoice)
 

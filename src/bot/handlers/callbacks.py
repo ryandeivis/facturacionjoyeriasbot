@@ -384,10 +384,14 @@ async def _show_cliente_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     cliente = context.user_data.get('cliente_detectado', {})
 
+    # Obtener cédula de cliente_detectado o de cliente_cedula
+    cedula = cliente.get('cedula') or context.user_data.get('cliente_cedula', '—')
+
     mensaje = (
         "👤 EDITAR CLIENTE\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"   Nombre: {cliente.get('nombre', '—')}\n"
+        f"   Cédula: {cedula}\n"
         f"   Tel: {cliente.get('telefono', '—')}\n"
         f"   Dir: {cliente.get('direccion', '—')}\n"
         f"   Ciudad: {cliente.get('ciudad', '—')}\n"
