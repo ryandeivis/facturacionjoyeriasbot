@@ -1134,6 +1134,8 @@ async def _generar_pdf_factura(invoice_data_dict: dict, context: ContextTypes.DE
             "total": invoice_data_dict['total'],
             "vendedor_nombre": context.user_data.get('nombre'),
             "vendedor_cedula": context.user_data.get('cedula'),
+            "metodo_pago": invoice_data_dict.get('metodo_pago'),
+            "banco_destino": invoice_data_dict.get('banco_destino'),
             "notas": None
         }
 

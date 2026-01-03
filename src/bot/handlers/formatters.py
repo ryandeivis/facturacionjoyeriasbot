@@ -36,11 +36,14 @@ def format_items_list(items: List[Dict[str, Any]]) -> str:
     lines = []
     for i, item in enumerate(items, 1):
         nombre = item.get('nombre', item.get('descripcion', 'Producto'))
+        descripcion = item.get('descripcion', '')
         cantidad = item.get('cantidad', 1)
         precio = item.get('precio', item.get('precio_unitario', 0))
         subtotal = cantidad * precio
 
         lines.append(f"{i}. {nombre}")
+        if descripcion and descripcion != nombre:
+            lines.append(f"   {descripcion}")
         lines.append(f"   {cantidad} x {format_currency(precio)} = {format_currency(subtotal)}")
         lines.append("")
 

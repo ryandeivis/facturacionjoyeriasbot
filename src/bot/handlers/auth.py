@@ -71,6 +71,8 @@ EDITAR_CLIENTE_CAMPO = InvoiceStates.EDITAR_CLIENTE_CAMPO
 # Estados de método de pago
 METODO_PAGO = InvoiceStates.METODO_PAGO
 BANCO_DESTINO = InvoiceStates.BANCO_DESTINO
+# Estado de edición de descripción
+EDITAR_ITEM_DESCRIPCION = InvoiceStates.EDITAR_ITEM_DESCRIPCION
 
 # Inicializar base de datos al importar
 try:
@@ -365,6 +367,7 @@ def get_auth_conversation_handler() -> ConversationHandler:
         editar_item_nombre,
         editar_item_cantidad,
         editar_item_precio,
+        editar_item_descripcion,
         agregar_item_nombre,
         agregar_item_cantidad,
         agregar_item_precio,
@@ -435,6 +438,9 @@ def get_auth_conversation_handler() -> ConversationHandler:
             ],
             EDITAR_ITEM_PRECIO: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, editar_item_precio)
+            ],
+            EDITAR_ITEM_DESCRIPCION: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, editar_item_descripcion)
             ],
             AGREGAR_ITEM: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, agregar_item_nombre)
