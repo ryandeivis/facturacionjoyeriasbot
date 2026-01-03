@@ -41,20 +41,36 @@ st.set_page_config(
 # Estilos CSS personalizados
 st.markdown("""
 <style>
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-    }
-    .stMetric {
-        background-color: #f0f2f6;
+    /* Fondo oscuro para las tarjetas de métricas */
+    div[data-testid="stMetric"] {
+        background-color: #1e1e2e;
         padding: 15px;
         border-radius: 10px;
+        border: 1px solid #333;
     }
+
+    /* Texto de las métricas en blanco */
+    div[data-testid="stMetricLabel"] {
+        color: #ffffff !important;
+    }
+
     div[data-testid="stMetricValue"] {
+        color: #00d4ff !important;
         font-size: 2rem;
+    }
+
+    div[data-testid="stMetricDelta"] {
+        color: #00ff88 !important;
+    }
+
+    /* Encabezados */
+    h1, h2, h3 {
+        color: #ffffff;
+    }
+
+    /* Subtítulos de secciones */
+    .stSubheader {
+        color: #ffffff !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -261,7 +277,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # Auto-refresh cada 10 segundos
     main()
-    time.sleep(10)
-    st.rerun()

@@ -64,7 +64,7 @@ class DashboardQueries:
                 COUNT(*) as cantidad,
                 COALESCE(SUM(total), 0) as monto
             FROM invoices
-            WHERE is_deleted = 0
+            WHERE is_deleted = false
             GROUP BY estado
             ORDER BY cantidad DESC
         """)
@@ -82,7 +82,7 @@ class DashboardQueries:
                 COUNT(*) as cantidad,
                 COALESCE(SUM(total), 0) as monto
             FROM invoices
-            WHERE is_deleted = 0
+            WHERE is_deleted = false
             GROUP BY metodo_pago
             ORDER BY cantidad DESC
         """)
@@ -102,7 +102,7 @@ class DashboardQueries:
                 COUNT(*) as facturas,
                 COALESCE(SUM(total), 0) as ingresos
             FROM invoices
-            WHERE is_deleted = 0
+            WHERE is_deleted = false
               AND DATE(created_at) >= :start_date
             GROUP BY DATE(created_at)
             ORDER BY fecha
@@ -144,7 +144,7 @@ class DashboardQueries:
                 metodo_pago,
                 created_at
             FROM invoices
-            WHERE is_deleted = 0
+            WHERE is_deleted = false
             ORDER BY created_at DESC
             LIMIT :limit
         """)
